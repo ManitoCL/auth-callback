@@ -112,6 +112,14 @@
             <p id="error-message">Hubo un problema al verificar tu email. Por favor intenta nuevamente o contacta soporte.</p>
             <button class="close-btn" onclick="closeWindow()">Cerrar Ventana</button>
         </div>
+
+        <div id="unauthorized-state" style="display: none;">
+            <div class="icon error">🔒</div>
+            <h1>Acceso No Autorizado</h1>
+            <p>Esta página solo es accesible desde enlaces de verificación de email enviados por Manito.</p>
+            <p>Si necesitas verificar tu cuenta, revisa tu email o solicita un nuevo enlace de verificación.</p>
+            <button class="close-btn" onclick="closeWindow()">Cerrar Ventana</button>
+        </div>
     </div>
 
     <script type="module">
@@ -137,8 +145,30 @@
 
                 console.log('URL params:', { accessToken, refreshToken, tokenType, type })
 
-                if (!accessToken || type !== 'signup') {
-                    throw new Error('Token de confirmación inválido o faltante')
+                // Security: Block access without valid tokens
+                if (!accessToken || !refreshToken) {
+                    throw new Error('Acceso no autorizado. Esta página solo es accesible desde enlaces de verificación de email.')
+                }
+
+                // Security: Only allow signup confirmations
+                if (type !== 'signup') {
+                    throw new Error('Tipo de confirmación no válido')
+                }
+
+                // Security: Validate token format (basic JWT check)
+                if (!accessToken.startsWith('eyJ') || accessToken.length < 50) {
+                    throw new Error('Token de confirmación inválido')
+                }
+
+                // Security: Check token expiration (tokens have exp claim)
+                try {
+                    const tokenPayload = JSON.parse(atob(accessToken.split('.')[1]))
+                    const now = Math.floor(Date.now() / 1000)
+                    if (tokenPayload.exp && tokenPayload.exp < now) {
+                        throw new Error('Token de confirmación expirado')
+                    }
+                } catch (e) {
+                    throw new Error('Token de confirmación malformado')
                 }
 
                 // Set the session using the tokens
@@ -172,8 +202,14 @@
 
         function showError(message) {
             document.getElementById('loading-state').style.display = 'none'
-            document.getElementById('error-message').textContent = message
-            document.getElementById('error-state').style.display = 'block'
+
+            // Show unauthorized state for access control errors
+            if (message.includes('Acceso no autorizado') || message.includes('no autorizado')) {
+                document.getElementById('unauthorized-state').style.display = 'block'
+            } else {
+                document.getElementById('error-message').textContent = message
+                document.getElementById('error-state').style.display = 'block'
+            }
         }
 
         function tryDeepLink() {
