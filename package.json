@@ -1,0 +1,14 @@
+{
+  "name": "manito-auth-callback",
+  "version": "1.0.0",
+  "description": "Email confirmation callback handler for Manito app",
+  "main": "index.html",
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "echo 'Static site - no build needed'",
+    "deploy": "vercel --prod"
+  },
+  "keywords": ["auth", "supabase", "callback"],
+  "author": "Manito",
+  "license": "MIT"
+}
