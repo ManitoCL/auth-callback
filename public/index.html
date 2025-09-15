@@ -122,20 +122,29 @@
         </div>
     </div>
 
-    <script type="module">
-        import { createClient } from 'https://cdn.skypack.dev/@supabase/supabase-js@2'
-
-        // Supabase configuration - replace with your actual values
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <script>
+        // Supabase configuration
         const supabaseUrl = 'https://vvgzpllwseynjlxxwirj.supabase.co'
         const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ2Z3pwbGx3c2V5bmpseHh3aXJqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjYzMTI0ODUsImV4cCI6MjA0MTg4ODQ4NX0.YY6o6M2NNV5w8VVPYtlPV7ZUHpXc9RKX9FZQCZrQPso'
 
-        const supabase = createClient(supabaseUrl, supabaseKey)
+        // Create Supabase client
+        const supabase = window.supabase.createClient(supabaseUrl, supabaseKey)
+
+        console.log('Supabase client created:', supabase)
+        console.log('Current URL:', window.location.href)
+        console.log('URL params:', window.location.search)
+        console.log('URL hash:', window.location.hash)
 
         async function handleEmailConfirmation() {
+            console.log('=== Starting Email Confirmation ===')
             try {
                 // Get the URL fragments/hash parameters
                 const hashParams = new URLSearchParams(window.location.hash.substring(1))
                 const urlParams = new URLSearchParams(window.location.search)
+
+                console.log('Hash params:', Object.fromEntries(hashParams))
+                console.log('URL params:', Object.fromEntries(urlParams))
 
                 // Check for tokens in both hash and query params
                 const accessToken = hashParams.get('access_token') || urlParams.get('access_token')
@@ -143,7 +152,12 @@
                 const tokenType = hashParams.get('token_type') || urlParams.get('token_type')
                 const type = hashParams.get('type') || urlParams.get('type')
 
-                console.log('URL params:', { accessToken, refreshToken, tokenType, type })
+                console.log('Extracted tokens:', {
+                    accessToken: accessToken ? 'present' : 'missing',
+                    refreshToken: refreshToken ? 'present' : 'missing',
+                    tokenType,
+                    type
+                })
 
                 // Security: Block access without valid tokens
                 if (!accessToken || !refreshToken) {
@@ -172,12 +186,16 @@
                 }
 
                 // Set the session using the tokens
+                console.log('Calling supabase.auth.setSession...')
                 const { data, error } = await supabase.auth.setSession({
                     access_token: accessToken,
                     refresh_token: refreshToken
                 })
 
+                console.log('Supabase setSession response:', { data, error })
+
                 if (error) {
+                    console.error('Supabase setSession error:', error)
                     throw error
                 }
 
