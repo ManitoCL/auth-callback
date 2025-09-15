@@ -122,11 +122,12 @@
         </div>
     </div>
 
+    <script src="config.js"></script>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <script>
-        // Supabase configuration
-        const supabaseUrl = 'https://rlxsytlesoqbcgbnhwhq.supabase.co'
-        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJseHN5dGxlc29xYmNnYm5od2hxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3MTY4MzYsImV4cCI6MjA3MzI5MjgzNn0.-JXn6oXvFj4GBX1EyIfrN4J5WEhFSvBCSZskAKusi9M'
+        // Supabase configuration from external config
+        const supabaseUrl = window.MANITO_CONFIG.supabaseUrl
+        const supabaseKey = window.MANITO_CONFIG.supabaseKey
 
         // Create Supabase client
         const supabase = window.supabase.createClient(supabaseUrl, supabaseKey)
@@ -169,20 +170,80 @@
                     throw new Error('Tipo de confirmación no válido')
                 }
 
-                // Security: Validate token format (basic JWT check)
-                if (!accessToken.startsWith('eyJ') || accessToken.length < 50) {
-                    throw new Error('Token de confirmación inválido')
+                // Security: Enhanced token validation with proper refresh token handling
+                function validateAccessToken(token) {
+                    try {
+                        const parts = token.split('.')
+                        if (parts.length !== 3) {
+                            throw new Error('Invalid JWT structure')
+                        }
+
+                        const payload = JSON.parse(atob(parts[1]))
+                        const now = Math.floor(Date.now() / 1000)
+
+                        console.log('Access token validation - aud:', payload.aud)
+
+                        // SECURITY: Exact issuer validation (no wildcards)
+                        const expectedIssuer = 'https://rlxsytlesoqbcgbnhwhq.supabase.co/auth/v1'
+                        if (payload.iss !== expectedIssuer) {
+                            console.error('Invalid issuer - expected:', expectedIssuer, 'got:', payload.iss)
+                            throw new Error('Invalid token issuer')
+                        }
+
+                        // Verify expiration
+                        if (!payload.exp || payload.exp < now) {
+                            throw new Error('Token expired or missing expiration')
+                        }
+
+                        // Verify this is for authentication
+                        if (payload.aud !== 'authenticated') {
+                            throw new Error('Invalid token audience: ' + payload.aud)
+                        }
+
+                        // Additional security: Check issued-at time is reasonable
+                        if (payload.iat && payload.iat > now) {
+                            throw new Error('Token issued in the future')
+                        }
+
+                        return true
+                    } catch (e) {
+                        throw new Error('Access token validation failed: ' + e.message)
+                    }
                 }
 
-                // Security: Check token expiration (tokens have exp claim)
-                try {
-                    const tokenPayload = JSON.parse(atob(accessToken.split('.')[1]))
-                    const now = Math.floor(Date.now() / 1000)
-                    if (tokenPayload.exp && tokenPayload.exp < now) {
-                        throw new Error('Token de confirmación expirado')
+                function validateRefreshToken(token) {
+                    try {
+                        // Supabase refresh tokens are opaque strings, not JWTs
+                        // Basic validation: ensure it's a reasonable format
+                        if (!token || typeof token !== 'string') {
+                            throw new Error('Refresh token must be a string')
+                        }
+
+                        // Supabase refresh tokens are typically 12+ characters of alphanumeric
+                        if (token.length < 8) {
+                            throw new Error('Refresh token too short')
+                        }
+
+                        // Basic format check - should be alphanumeric (Supabase pattern)
+                        if (!/^[a-zA-Z0-9]+$/.test(token)) {
+                            throw new Error('Refresh token invalid format')
+                        }
+
+                        console.log('Refresh token validation passed - length:', token.length)
+                        return true
+                    } catch (e) {
+                        throw new Error('Refresh token validation failed: ' + e.message)
                     }
-                } catch (e) {
-                    throw new Error('Token de confirmación malformado')
+                }
+
+                // SECURITY: Validate both tokens with proper handling
+                try {
+                    validateAccessToken(accessToken)
+                    validateRefreshToken(refreshToken)
+                    console.log('Token validation passed')
+                } catch (validationError) {
+                    console.error('Token validation failed:', validationError.message)
+                    throw new Error('Tokens de autenticación inválidos')
                 }
 
                 // Set the session using the tokens
@@ -199,25 +260,47 @@
                     throw error
                 }
 
-                console.log('Email confirmation successful:', data)
+                console.log('✅ Auth callback: Email confirmation successful:', {
+                    userId: data.user?.id?.substring(0, 8) + '...',
+                    email: data.user?.email,
+                    emailConfirmed: !!data.user?.email_confirmed_at
+                })
 
                 // Create user profile in custom users table
-                console.log('Creating user profile...')
+                console.log('🔄 Creating user profile...')
                 try {
-                    const { data: profileData, error: profileError } = await supabase.rpc('handle_email_confirmation', {
-                        user_id: data.user.id
+                    // Use the secure function that only works for authenticated users
+                    // After setSession, the user should be authenticated
+                    console.log('📞 Calling create_user_profile_secure...')
+                    const { data: profileData, error: profileError } = await supabase.rpc('create_user_profile_secure')
+
+                    console.log('📊 Profile creation result:', {
+                        success: !profileError,
+                        data: profileData,
+                        error: profileError?.message,
+                        errorCode: profileError?.code
                     })
 
-                    console.log('Profile creation result:', { profileData, profileError })
-
                     if (profileError) {
-                        console.error('Profile creation failed:', profileError)
+                        console.error('❌ Profile creation failed:', {
+                            message: profileError.message,
+                            code: profileError.code,
+                            details: profileError.details,
+                            hint: profileError.hint
+                        })
+                        // Check if it's an auth error vs other error
+                        if (profileError.message?.includes('Authentication required') || profileError.message?.includes('Not authorized')) {
+                            console.error('🚨 SECURITY: User not properly authenticated after setSession')
+                        }
                         // Don't fail the whole flow - user is still authenticated
                     } else {
-                        console.log('User profile created successfully')
+                        console.log('✅ User profile created successfully:', profileData)
                     }
                 } catch (profileErr) {
-                    console.error('Profile creation error:', profileErr)
+                    console.error('💥 Profile creation exception:', {
+                        message: profileErr.message,
+                        stack: profileErr.stack
+                    })
                     // Don't fail the whole flow - user is still authenticated
                 }
 
@@ -252,16 +335,40 @@
         }
 
         function tryDeepLink() {
+            console.log('🔗 Attempting to redirect to mobile app...')
+
             // Try to redirect back to the mobile app
             const appScheme = 'manito://auth/confirmed'
 
-            // Create a hidden link and click it
-            const link = document.createElement('a')
-            link.href = appScheme
-            link.style.display = 'none'
-            document.body.appendChild(link)
-            link.click()
-            document.body.removeChild(link)
+            try {
+                // Method 1: Try window.location (most reliable)
+                window.location.href = appScheme
+
+                // Method 2: Fallback to hidden link approach
+                setTimeout(() => {
+                    const link = document.createElement('a')
+                    link.href = appScheme
+                    link.style.display = 'none'
+                    document.body.appendChild(link)
+                    link.click()
+                    document.body.removeChild(link)
+                    console.log('🔗 Deep link attempted via hidden link')
+                }, 500)
+
+            } catch (error) {
+                console.error('❌ Deep link failed:', error)
+            }
+
+            // Update success message to include manual return instruction
+            setTimeout(() => {
+                const successDiv = document.getElementById('success-state')
+                if (successDiv && successDiv.style.display !== 'none') {
+                    const message = successDiv.querySelector('p')
+                    if (message) {
+                        message.innerHTML = 'Tu cuenta ha sido verificada exitosamente. <strong>La aplicación debería abrirse automáticamente.</strong> Si no se abre, regresa manualmente a la aplicación Manito.'
+                    }
+                }
+            }, 2000)
         }
 
         // Make closeWindow globally available
