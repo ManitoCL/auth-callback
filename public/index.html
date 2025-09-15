@@ -200,6 +200,27 @@
                 }
 
                 console.log('Email confirmation successful:', data)
+
+                // Create user profile in custom users table
+                console.log('Creating user profile...')
+                try {
+                    const { data: profileData, error: profileError } = await supabase.rpc('handle_email_confirmation', {
+                        user_id: data.user.id
+                    })
+
+                    console.log('Profile creation result:', { profileData, profileError })
+
+                    if (profileError) {
+                        console.error('Profile creation failed:', profileError)
+                        // Don't fail the whole flow - user is still authenticated
+                    } else {
+                        console.log('User profile created successfully')
+                    }
+                } catch (profileErr) {
+                    console.error('Profile creation error:', profileErr)
+                    // Don't fail the whole flow - user is still authenticated
+                }
+
                 showSuccess()
 
                 // Try to deep link back to the app after a short delay
