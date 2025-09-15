@@ -335,10 +335,21 @@
         }
 
         function tryDeepLink() {
-            console.log('🔗 Attempting to redirect to mobile app...')
+            console.log('🔗 Attempting to redirect to mobile app with session tokens...')
 
-            // Try to redirect back to the mobile app
-            const appScheme = 'manito://auth/confirmed'
+            // Extract tokens from hash parameters
+            const hashParams = new URLSearchParams(window.location.hash.substring(1))
+            const accessToken = hashParams.get('access_token')
+            const refreshToken = hashParams.get('refresh_token')
+
+            // Create deep link with tokens for mobile app session sync
+            const appScheme = `manito://auth/callback?access_token=${accessToken}&refresh_token=${refreshToken}&type=signup`
+
+            console.log('🔗 Deep link with tokens:', {
+                hasAccessToken: !!accessToken,
+                hasRefreshToken: !!refreshToken,
+                tokenLength: accessToken?.length
+            })
 
             try {
                 // Method 1: Try window.location (most reliable)
@@ -352,7 +363,7 @@
                     document.body.appendChild(link)
                     link.click()
                     document.body.removeChild(link)
-                    console.log('🔗 Deep link attempted via hidden link')
+                    console.log('🔗 Deep link with tokens attempted via hidden link')
                 }, 500)
 
             } catch (error) {
