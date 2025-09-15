@@ -141,6 +141,20 @@
         let globalAccessToken = null;
         let globalRefreshToken = null;
 
+        // Platform detection
+        function detectPlatform() {
+            const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+
+            const isMobile = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent);
+            const isIOS = /iPad|iPhone|iPod/.test(userAgent);
+            const isAndroid = /android/i.test(userAgent);
+            const isDesktop = !isMobile;
+
+            console.log('🔍 Platform detected:', { isMobile, isIOS, isAndroid, isDesktop, userAgent });
+
+            return { isMobile, isIOS, isAndroid, isDesktop };
+        }
+
         async function handleEmailConfirmation() {
             console.log('=== Starting Email Confirmation ===')
             try {
@@ -316,12 +330,20 @@
                     // Don't fail the whole flow - user is still authenticated
                 }
 
-                showSuccess()
+                // Platform-aware success handling
+                const platform = detectPlatform();
 
-                // Try to deep link back to the app after a short delay
-                setTimeout(() => {
-                    tryDeepLink()
-                }, 2000)
+                if (platform.isMobile) {
+                    console.log('📱 Mobile device detected - attempting immediate app redirect');
+                    showSuccess()
+                    // On mobile, try immediate redirect
+                    setTimeout(() => {
+                        tryDeepLinkMobile()
+                    }, 1000)
+                } else {
+                    console.log('🖥️ Desktop device detected - showing mobile instructions');
+                    showDesktopSuccess()
+                }
 
             } catch (error) {
                 console.error('Email confirmation error:', error)
@@ -334,6 +356,43 @@
             document.getElementById('success-state').style.display = 'block'
         }
 
+        function showDesktopSuccess() {
+            document.getElementById('loading-state').style.display = 'none'
+            const successDiv = document.getElementById('success-state')
+            successDiv.style.display = 'block'
+
+            // Update content for desktop users
+            const titleElement = successDiv.querySelector('h1')
+            const messageElement = successDiv.querySelector('p')
+            const buttonElement = successDiv.querySelector('button')
+
+            if (titleElement) {
+                titleElement.innerHTML = '✅ Email Verificado'
+            }
+
+            if (messageElement) {
+                messageElement.innerHTML = `
+                    <div style="background: #F0FDF4; padding: 20px; border-radius: 12px; border-left: 4px solid #10B981; margin: 20px 0;">
+                        <div style="color: #10B981; font-size: 18px; font-weight: bold; margin-bottom: 12px;">
+                            📱 Abre Manito en tu teléfono
+                        </div>
+                        <div style="color: #059669; line-height: 1.5;">
+                            Tu email ha sido verificado exitosamente. La sesión se sincronizará automáticamente cuando abras la aplicación Manito en tu dispositivo móvil.
+                        </div>
+                    </div>
+
+                    <div style="color: #6B7280; font-size: 14px; margin-top: 16px; padding: 12px; background: #F9FAFB; border-radius: 8px;">
+                        💡 <strong>Consejo:</strong> Si ya tienes la app abierta, simplemente regresa a ella para continuar.
+                    </div>
+                `
+            }
+
+            if (buttonElement) {
+                buttonElement.innerHTML = '📱 Entendido'
+                buttonElement.style.background = '#10B981'
+            }
+        }
+
         function showError(message) {
             document.getElementById('loading-state').style.display = 'none'
 
@@ -344,6 +403,112 @@
                 document.getElementById('error-message').textContent = message
                 document.getElementById('error-state').style.display = 'block'
             }
+        }
+
+        function tryDeepLinkMobile() {
+            console.log('📱 Attempting mobile app redirect with session tokens...');
+
+            // CRITICAL FIX: Use globally stored tokens instead of re-extracting from hash
+            console.log('🔒 Using globally stored tokens for deep link:', {
+                hasAccessToken: !!globalAccessToken,
+                hasRefreshToken: !!globalRefreshToken,
+                accessTokenLength: globalAccessToken?.length,
+                refreshTokenLength: globalRefreshToken?.length
+            })
+
+            // Create deep link with tokens for mobile app session sync
+            const appScheme = `manito://auth/callback?access_token=${globalAccessToken}&refresh_token=${globalRefreshToken}&type=signup`
+
+            console.log('📱 Mobile deep link:', {
+                hasAccessToken: !!globalAccessToken,
+                hasRefreshToken: !!globalRefreshToken,
+                tokenLength: globalAccessToken?.length,
+                deepLinkLength: appScheme.length
+            })
+
+            try {
+                // Method 1: Direct redirect (most effective on mobile)
+                console.log('📱 Attempting direct redirect to app...')
+                window.location.href = appScheme
+
+                // Method 2: Fallback with immediate retry for iOS/Android compatibility
+                setTimeout(() => {
+                    const link = document.createElement('a')
+                    link.href = appScheme
+                    link.style.display = 'none'
+                    document.body.appendChild(link)
+                    link.click()
+                    document.body.removeChild(link)
+                    console.log('📱 Mobile fallback deep link attempted')
+                }, 500)
+
+                // Method 3: Additional iOS-specific fallback using iframe
+                const platform = detectPlatform()
+                if (platform.isIOS) {
+                    setTimeout(() => {
+                        const iframe = document.createElement('iframe')
+                        iframe.src = appScheme
+                        iframe.style.display = 'none'
+                        document.body.appendChild(iframe)
+                        setTimeout(() => document.body.removeChild(iframe), 1000)
+                        console.log('📱 iOS iframe deep link attempted')
+                    }, 1000)
+                }
+
+                // Method 4: Update UI with professional fallback option
+                setTimeout(() => {
+                    const successDiv = document.getElementById('success-state')
+                    if (successDiv && successDiv.style.display !== 'none') {
+                        const messageElement = successDiv.querySelector('p')
+                        if (messageElement) {
+                            messageElement.innerHTML = `
+                                <div style="color: #10B981; font-size: 18px; font-weight: bold; margin-bottom: 16px;">
+                                    ✅ ¡Email Verificado!
+                                </div>
+                                <div style="background: #F0FDF4; padding: 16px; border-radius: 8px; border-left: 4px solid #10B981; margin: 16px 0;">
+                                    <strong>📱 Abriendo Manito...</strong><br>
+                                    <span style="color: #059669;">Si la app no se abre automáticamente en 3 segundos, usa el botón de abajo.</span>
+                                </div>
+                            `
+                        }
+
+                        const buttonElement = successDiv.querySelector('button')
+                        if (buttonElement) {
+                            buttonElement.innerHTML = '📱 Abrir Manito'
+                            buttonElement.style.background = '#10B981'
+                            buttonElement.onclick = function() {
+                                window.location.href = appScheme
+                            }
+                        }
+                    }
+                }, 2000)
+
+            } catch (error) {
+                console.error('❌ Mobile deep link failed:', error)
+                // Show error-specific message
+                const successDiv = document.getElementById('success-state')
+                if (successDiv) {
+                    const messageElement = successDiv.querySelector('p')
+                    if (messageElement) {
+                        messageElement.innerHTML = `
+                            <div style="color: #10B981; font-size: 18px; font-weight: bold; margin-bottom: 16px;">
+                                ✅ ¡Email Verificado!
+                            </div>
+                            <div style="background: #FEF3C7; padding: 16px; border-radius: 8px; border-left: 4px solid #F59E0B; margin: 16px 0;">
+                                <strong>📱 Abre Manito manualmente</strong><br>
+                                <span style="color: #92400E;">Tu cuenta está verificada. Abre la app Manito para continuar.</span>
+                            </div>
+                        `
+                    }
+                }
+            }
+
+            // SECURITY: Clear tokens from memory after use
+            setTimeout(() => {
+                globalAccessToken = null
+                globalRefreshToken = null
+                console.log('🔒 Tokens cleared from memory for security')
+            }, 10000) // Longer timeout for mobile redirect attempts
         }
 
         function tryDeepLink() {
