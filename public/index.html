@@ -374,7 +374,7 @@
                 messageElement.innerHTML = `
                     <div style="background: #F0FDF4; padding: 20px; border-radius: 12px; border-left: 4px solid #10B981; margin: 20px 0;">
                         <div style="color: #10B981; font-size: 18px; font-weight: bold; margin-bottom: 12px;">
-                            📱 Abre Manito en tu teléfono
+                            📱 Abre Manito en tu dispositivo móvil
                         </div>
                         <div style="color: #059669; line-height: 1.5;">
                             Tu email ha sido verificado exitosamente. La sesión se sincronizará automáticamente cuando abras la aplicación Manito en tu dispositivo móvil.
@@ -405,19 +405,53 @@
             }
         }
 
-        function tryDeepLinkMobile() {
-            console.log('📱 Attempting mobile app redirect with session tokens...');
+        async function tryDeepLinkMobile() {
+            console.log('📱 Attempting mobile app redirect with secure session...');
 
             // CRITICAL FIX: Use globally stored tokens instead of re-extracting from hash
-            console.log('🔒 Using globally stored tokens for deep link:', {
+            console.log('🔒 Using globally stored tokens for secure session creation:', {
                 hasAccessToken: !!globalAccessToken,
                 hasRefreshToken: !!globalRefreshToken,
                 accessTokenLength: globalAccessToken?.length,
                 refreshTokenLength: globalRefreshToken?.length
             })
 
-            // Create deep link with tokens for mobile app session sync
-            const appScheme = `manito://auth/callback?access_token=${globalAccessToken}&refresh_token=${globalRefreshToken}&type=signup`
+            // Create secure deep link using session code instead of raw tokens
+            let appScheme;
+            try {
+                const response = await fetch('/api/create-secure-session', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        access_token: globalAccessToken,
+                        refresh_token: globalRefreshToken,
+                        type: 'signup'
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to create secure session code');
+                }
+
+                const { session_code } = await response.json();
+                appScheme = `manito://auth/callback?session_code=${session_code}&type=signup`;
+
+                console.log('🔗 Created secure deep link:', {
+                    hasSessionCode: !!session_code,
+                    deepLinkLength: appScheme.length
+                });
+            } catch (secureError) {
+                console.warn('⚠️ Falling back to direct tokens due to secure session error:', secureError);
+                // Fallback to direct tokens if secure session creation fails
+                appScheme = `manito://auth/callback?access_token=${globalAccessToken}&refresh_token=${globalRefreshToken}&type=signup`;
+
+                console.log('🔗 Created fallback deep link:', {
+                    hasTokens: !!(globalAccessToken && globalRefreshToken),
+                    deepLinkLength: appScheme.length
+                });
+            }
 
             console.log('📱 Mobile deep link:', {
                 hasAccessToken: !!globalAccessToken,
@@ -511,20 +545,54 @@
             }, 3000) // Reduced timeout for better security
         }
 
-        function tryDeepLink() {
-            console.log('🔗 Attempting to redirect to mobile app with session tokens...')
+        async function tryDeepLink() {
+            console.log('🔗 Attempting to redirect to mobile app with secure session...')
 
             // CRITICAL FIX: Use globally stored tokens instead of re-extracting from hash
             // Hash parameters may have been consumed/cleared by setSession()
-            console.log('🔒 Using globally stored tokens for deep link:', {
+            console.log('🔒 Using globally stored tokens for secure session creation:', {
                 hasAccessToken: !!globalAccessToken,
                 hasRefreshToken: !!globalRefreshToken,
                 accessTokenLength: globalAccessToken?.length,
                 refreshTokenLength: globalRefreshToken?.length
             })
 
-            // Create deep link with tokens for mobile app session sync
-            const appScheme = `manito://auth/callback?access_token=${globalAccessToken}&refresh_token=${globalRefreshToken}&type=signup`
+            // Create secure deep link using session code instead of raw tokens
+            let appScheme;
+            try {
+                const response = await fetch('/api/create-secure-session', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        access_token: globalAccessToken,
+                        refresh_token: globalRefreshToken,
+                        type: 'signup'
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to create secure session code');
+                }
+
+                const { session_code } = await response.json();
+                appScheme = `manito://auth/callback?session_code=${session_code}&type=signup`;
+
+                console.log('🔗 Created secure deep link:', {
+                    hasSessionCode: !!session_code,
+                    deepLinkLength: appScheme.length
+                });
+            } catch (secureError) {
+                console.warn('⚠️ Falling back to direct tokens due to secure session error:', secureError);
+                // Fallback to direct tokens if secure session creation fails
+                appScheme = `manito://auth/callback?access_token=${globalAccessToken}&refresh_token=${globalRefreshToken}&type=signup`;
+
+                console.log('🔗 Created fallback deep link:', {
+                    hasTokens: !!(globalAccessToken && globalRefreshToken),
+                    deepLinkLength: appScheme.length
+                });
+            }
 
             console.log('🔗 Deep link with tokens:', {
                 hasAccessToken: !!globalAccessToken,
