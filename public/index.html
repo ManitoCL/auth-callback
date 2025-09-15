@@ -137,31 +137,43 @@
         console.log('URL params:', window.location.search)
         console.log('URL hash:', window.location.hash)
 
+        // Global variables to store tokens for deep link (secure in-memory storage)
+        let globalAccessToken = null;
+        let globalRefreshToken = null;
+
         async function handleEmailConfirmation() {
             console.log('=== Starting Email Confirmation ===')
             try {
-                // Get the URL fragments/hash parameters
+                // CRITICAL: Extract tokens IMMEDIATELY before any Supabase operations
+                // Supabase setSession() may consume/clear hash parameters
                 const hashParams = new URLSearchParams(window.location.hash.substring(1))
                 const urlParams = new URLSearchParams(window.location.search)
 
                 console.log('Hash params:', Object.fromEntries(hashParams))
                 console.log('URL params:', Object.fromEntries(urlParams))
 
-                // Check for tokens in both hash and query params
-                const accessToken = hashParams.get('access_token') || urlParams.get('access_token')
-                const refreshToken = hashParams.get('refresh_token') || urlParams.get('refresh_token')
+                // Store tokens globally for later deep link use
+                globalAccessToken = hashParams.get('access_token') || urlParams.get('access_token')
+                globalRefreshToken = hashParams.get('refresh_token') || urlParams.get('refresh_token')
                 const tokenType = hashParams.get('token_type') || urlParams.get('token_type')
                 const type = hashParams.get('type') || urlParams.get('type')
 
+                console.log('🔒 Tokens extracted and secured:', {
+                    hasAccessToken: !!globalAccessToken,
+                    hasRefreshToken: !!globalRefreshToken,
+                    accessTokenLength: globalAccessToken?.length,
+                    refreshTokenLength: globalRefreshToken?.length
+                })
+
                 console.log('Extracted tokens:', {
-                    accessToken: accessToken ? 'present' : 'missing',
-                    refreshToken: refreshToken ? 'present' : 'missing',
+                    accessToken: globalAccessToken ? 'present' : 'missing',
+                    refreshToken: globalRefreshToken ? 'present' : 'missing',
                     tokenType,
                     type
                 })
 
                 // Security: Block access without valid tokens
-                if (!accessToken || !refreshToken) {
+                if (!globalAccessToken || !globalRefreshToken) {
                     throw new Error('Acceso no autorizado. Esta página solo es accesible desde enlaces de verificación de email.')
                 }
 
@@ -238,8 +250,8 @@
 
                 // SECURITY: Validate both tokens with proper handling
                 try {
-                    validateAccessToken(accessToken)
-                    validateRefreshToken(refreshToken)
+                    validateAccessToken(globalAccessToken)
+                    validateRefreshToken(globalRefreshToken)
                     console.log('Token validation passed')
                 } catch (validationError) {
                     console.error('Token validation failed:', validationError.message)
@@ -249,8 +261,8 @@
                 // Set the session using the tokens
                 console.log('Calling supabase.auth.setSession...')
                 const { data, error } = await supabase.auth.setSession({
-                    access_token: accessToken,
-                    refresh_token: refreshToken
+                    access_token: globalAccessToken,
+                    refresh_token: globalRefreshToken
                 })
 
                 console.log('Supabase setSession response:', { data, error })
@@ -337,18 +349,23 @@
         function tryDeepLink() {
             console.log('🔗 Attempting to redirect to mobile app with session tokens...')
 
-            // Extract tokens from hash parameters
-            const hashParams = new URLSearchParams(window.location.hash.substring(1))
-            const accessToken = hashParams.get('access_token')
-            const refreshToken = hashParams.get('refresh_token')
+            // CRITICAL FIX: Use globally stored tokens instead of re-extracting from hash
+            // Hash parameters may have been consumed/cleared by setSession()
+            console.log('🔒 Using globally stored tokens for deep link:', {
+                hasAccessToken: !!globalAccessToken,
+                hasRefreshToken: !!globalRefreshToken,
+                accessTokenLength: globalAccessToken?.length,
+                refreshTokenLength: globalRefreshToken?.length
+            })
 
             // Create deep link with tokens for mobile app session sync
-            const appScheme = `manito://auth/callback?access_token=${accessToken}&refresh_token=${refreshToken}&type=signup`
+            const appScheme = `manito://auth/callback?access_token=${globalAccessToken}&refresh_token=${globalRefreshToken}&type=signup`
 
             console.log('🔗 Deep link with tokens:', {
-                hasAccessToken: !!accessToken,
-                hasRefreshToken: !!refreshToken,
-                tokenLength: accessToken?.length
+                hasAccessToken: !!globalAccessToken,
+                hasRefreshToken: !!globalRefreshToken,
+                tokenLength: globalAccessToken?.length,
+                deepLinkLength: appScheme.length
             })
 
             try {
@@ -369,6 +386,13 @@
             } catch (error) {
                 console.error('❌ Deep link failed:', error)
             }
+
+            // SECURITY: Clear tokens from memory after use (best practice)
+            setTimeout(() => {
+                globalAccessToken = null
+                globalRefreshToken = null
+                console.log('🔒 Tokens cleared from memory for security')
+            }, 5000) // Clear after deep link attempts complete
 
             // Update success message to include manual return instruction
             setTimeout(() => {
