@@ -261,9 +261,9 @@
                 }
 
                 console.log('✅ Auth callback: Email confirmation successful:', {
-                    userId: data.user?.id?.substring(0, 8) + '...',
-                    email: data.user?.email,
-                    emailConfirmed: !!data.user?.email_confirmed_at
+                    hasUser: !!data.user,
+                    emailConfirmed: !!data.user?.email_confirmed_at,
+                    sessionSet: true
                 })
 
                 // Create user profile in custom users table
