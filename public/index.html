@@ -209,8 +209,8 @@
 
                         console.log('Access token validation - aud:', payload.aud)
 
-                        // SECURITY: Exact issuer validation (no wildcards)
-                        const expectedIssuer = 'https://rlxsytlesoqbcgbnhwhq.supabase.co/auth/v1'
+                        // SECURITY: Environment-based issuer validation (no hardcoding)
+                        const expectedIssuer = `${window.MANITO_CONFIG.supabaseUrl}/auth/v1`
                         if (payload.iss !== expectedIssuer) {
                             console.error('Invalid issuer - expected:', expectedIssuer, 'got:', payload.iss)
                             throw new Error('Invalid token issuer')
@@ -503,12 +503,12 @@
                 }
             }
 
-            // SECURITY: Clear tokens from memory after use
+            // SECURITY: Clear tokens immediately after successful deep link attempts
             setTimeout(() => {
                 globalAccessToken = null
                 globalRefreshToken = null
                 console.log('🔒 Tokens cleared from memory for security')
-            }, 10000) // Longer timeout for mobile redirect attempts
+            }, 3000) // Reduced timeout for better security
         }
 
         function tryDeepLink() {
@@ -557,7 +557,7 @@
                 globalAccessToken = null
                 globalRefreshToken = null
                 console.log('🔒 Tokens cleared from memory for security')
-            }, 5000) // Clear after deep link attempts complete
+            }, 3000) // Reduced timeout for better security
 
             // Update success message with clear manual instructions
             setTimeout(() => {
