@@ -394,16 +394,41 @@
                 console.log('🔒 Tokens cleared from memory for security')
             }, 5000) // Clear after deep link attempts complete
 
-            // Update success message to include manual return instruction
+            // Update success message with clear manual instructions
             setTimeout(() => {
                 const successDiv = document.getElementById('success-state')
                 if (successDiv && successDiv.style.display !== 'none') {
-                    const message = successDiv.querySelector('p')
-                    if (message) {
-                        message.innerHTML = 'Tu cuenta ha sido verificada exitosamente. <strong>La aplicación debería abrirse automáticamente.</strong> Si no se abre, regresa manualmente a la aplicación Manito.'
+                    const titleElement = successDiv.querySelector('h1')
+                    const messageElement = successDiv.querySelector('p')
+                    const buttonElement = successDiv.querySelector('button')
+
+                    if (titleElement) {
+                        titleElement.innerHTML = '¡Email Verificado Exitosamente! 🎉'
+                    }
+
+                    if (messageElement) {
+                        messageElement.innerHTML = `
+                            <strong style="color: #10B981; font-size: 18px;">✅ Tu cuenta está lista</strong><br><br>
+
+                            <div style="background: #F0FDF4; padding: 16px; border-radius: 8px; border-left: 4px solid #10B981; margin: 16px 0;">
+                                <strong>📱 Regresa a la aplicación Manito</strong><br>
+                                <span style="color: #059669;">Tu sesión se sincronizará automáticamente cuando abras la app.</span>
+                            </div>
+
+                            <div style="color: #6B7280; font-size: 14px; margin-top: 16px;">
+                                💡 <strong>Consejo:</strong> Si ya tienes la app abierta, simplemente toca la pantalla para refrescar.
+                            </div>
+                        `
+                    }
+
+                    if (buttonElement) {
+                        buttonElement.innerHTML = '📱 Entendido - Volver a Manito'
+                        buttonElement.style.background = '#10B981'
+                        buttonElement.style.fontSize = '16px'
+                        buttonElement.style.padding = '14px 28px'
                     }
                 }
-            }, 2000)
+            }, 1000)
         }
 
         // Make closeWindow globally available
