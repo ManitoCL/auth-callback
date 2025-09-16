@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debug Supabase Email Verification</title>
+</head>
+<body>
+    <h1>Debug Email Verification</h1>
+    <div id="output"></div>
+
+    <script>
+        const output = document.getElementById('output');
+
+        function log(message) {
+            output.innerHTML += '<p>' + message + '</p>';
+            console.log(message);
+        }
+
+        // Log everything about the current URL
+        log('Full URL: ' + window.location.href);
+        log('Origin: ' + window.location.origin);
+        log('Pathname: ' + window.location.pathname);
+        log('Search: ' + window.location.search);
+        log('Hash: ' + window.location.hash);
+
+        // Parse query parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        log('Query parameters:');
+        for (const [key, value] of urlParams) {
+            log(`  ${key}: ${value}`);
+        }
+
+        // Parse hash parameters
+        if (window.location.hash) {
+            const hashParams = new URLSearchParams(window.location.hash.substring(1));
+            log('Hash parameters:');
+            for (const [key, value] of hashParams) {
+                log(`  ${key}: ${value}`);
+            }
+        }
+
+        // Test with Supabase client
+        log('Loading Supabase...');
+    </script>
+
+    <script src="config.js"></script>
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+
+    <script>
+        if (window.MANITO_CONFIG) {
+            const supabase = window.supabase.createClient(
+                window.MANITO_CONFIG.supabaseUrl,
+                window.MANITO_CONFIG.supabaseKey,
+                {
+                    auth: {
+                        detectSessionInUrl: true,
+                        flowType: 'implicit'
+                    }
+                }
+            );
+
+            log('Supabase client created');
+
+            // Check session
+            supabase.auth.getSession().then(({ data, error }) => {
+                if (error) {
+                    log('Session error: ' + error.message);
+                } else if (data.session) {
+                    log('Session found!');
+                    log('User ID: ' + data.session.user.id);
+                    log('Email: ' + data.session.user.email);
+                    log('Email confirmed: ' + !!data.session.user.email_confirmed_at);
+                } else {
+                    log('No session found');
+                }
+            });
+        } else {
+            log('MANITO_CONFIG not found');
+        }
+    </script>
+</body>
+</html>

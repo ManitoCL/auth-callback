@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Confirmación de Email - Manito</title>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline'; connect-src 'self' https://*.supabase.co;">
     <style>
         * {
             margin: 0;
@@ -102,14 +103,19 @@
         <div id="success-state" style="display: none;">
             <div class="icon success">✅</div>
             <h1>¡Email Confirmado!</h1>
-            <p>Tu cuenta ha sido verificada exitosamente. Ya puedes cerrar esta ventana y regresar a la aplicación Manito.</p>
+            <p>Tu cuenta ha sido verificada exitosamente.</p>
+            <div id="mobile-link-section" style="display: none; margin: 20px 0;">
+                <p style="font-size: 14px; color: #6B7280;">¿Estás en un dispositivo móvil? Toca el botón para abrir la app:</p>
+                <button id="open-app-btn" class="close-btn" style="margin: 10px;">Abrir App Manito</button>
+            </div>
+            <p style="font-size: 14px; color: #6B7280;">Puedes cerrar esta ventana y volver a la aplicación Manito.</p>
             <button class="close-btn" onclick="closeWindow()">Cerrar Ventana</button>
         </div>
 
         <div id="error-state" style="display: none;">
             <div class="icon error">❌</div>
             <h1>Error en la Verificación</h1>
-            <p id="error-message">Hubo un problema al verificar tu email. Por favor intenta nuevamente o contacta soporte.</p>
+            <p id="error-message">Hubo un problema al verificar tu email. Por favor intenta nuevamente.</p>
             <button class="close-btn" onclick="closeWindow()">Cerrar Ventana</button>
         </div>
 
@@ -117,7 +123,6 @@
             <div class="icon error">🔒</div>
             <h1>Acceso No Autorizado</h1>
             <p>Esta página solo es accesible desde enlaces de verificación de email enviados por Manito.</p>
-            <p>Si necesitas verificar tu cuenta, revisa tu email o solicita un nuevo enlace de verificación.</p>
             <button class="close-btn" onclick="closeWindow()">Cerrar Ventana</button>
         </div>
     </div>
@@ -125,558 +130,428 @@
     <script src="config.js"></script>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <script>
-        // Supabase configuration from external config
-        const supabaseUrl = window.MANITO_CONFIG.supabaseUrl
-        const supabaseKey = window.MANITO_CONFIG.supabaseKey
+        // Rate limiting to prevent abuse
+        const RATE_LIMIT = {
+            attempts: 0,
+            maxAttempts: 3,
+            resetTime: 60000, // 1 minute
+            lastReset: Date.now()
+        };
 
-        // Create Supabase client
-        const supabase = window.supabase.createClient(supabaseUrl, supabaseKey)
+        function checkRateLimit() {
+            const now = Date.now();
+            if (now - RATE_LIMIT.lastReset > RATE_LIMIT.resetTime) {
+                RATE_LIMIT.attempts = 0;
+                RATE_LIMIT.lastReset = now;
+            }
 
-        console.log('Supabase client created:', supabase)
-        console.log('Current URL:', window.location.href)
-        console.log('URL params:', window.location.search)
-        console.log('URL hash:', window.location.hash)
+            if (RATE_LIMIT.attempts >= RATE_LIMIT.maxAttempts) {
+                throw new Error('Demasiados intentos. Espera un minuto antes de intentar nuevamente.');
+            }
 
-        // Global variables to store tokens for deep link (secure in-memory storage)
-        let globalAccessToken = null;
-        let globalRefreshToken = null;
-
-        // Platform detection
-        function detectPlatform() {
-            const userAgent = navigator.userAgent || navigator.vendor || window.opera;
-
-            const isMobile = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent);
-            const isIOS = /iPad|iPhone|iPod/.test(userAgent);
-            const isAndroid = /android/i.test(userAgent);
-            const isDesktop = !isMobile;
-
-            console.log('🔍 Platform detected:', { isMobile, isIOS, isAndroid, isDesktop, userAgent });
-
-            return { isMobile, isIOS, isAndroid, isDesktop };
+            RATE_LIMIT.attempts++;
         }
 
+        // Input validation and sanitization
+        function validateInput(input) {
+            if (!input || typeof input !== 'string') {
+                throw new Error('Parámetro inválido');
+            }
+
+            // Basic XSS prevention
+            const sanitized = input.replace(/[<>'"&]/g, '');
+
+            if (sanitized !== input) {
+                throw new Error('Parámetros contienen caracteres no válidos');
+            }
+
+            return sanitized;
+        }
+
+        // Secure configuration validation
+        if (!window.MANITO_CONFIG) {
+            showError('Configuración de seguridad no encontrada');
+            throw new Error('Security configuration missing');
+        }
+
+        const supabaseUrl = window.MANITO_CONFIG.supabaseUrl;
+        const supabaseKey = window.MANITO_CONFIG.supabaseKey;
+
+        if (!supabaseUrl || !supabaseKey) {
+            showError('Configuración de autenticación incompleta');
+            throw new Error('Auth configuration incomplete');
+        }
+
+        // Create Supabase client without automatic URL detection (we'll handle manually)
+        const supabase = window.supabase.createClient(supabaseUrl, supabaseKey, {
+            auth: {
+                detectSessionInUrl: false, // We'll handle verification manually
+                persistSession: true,
+                autoRefreshToken: true,
+                flowType: 'implicit',
+            }
+        });
+
+        /**
+         * Enhanced email confirmation handler with comprehensive error handling
+         */
         async function handleEmailConfirmation() {
-            console.log('=== Starting Email Confirmation ===')
             try {
-                // CRITICAL: Extract tokens IMMEDIATELY before any Supabase operations
-                // Supabase setSession() may consume/clear hash parameters
-                const hashParams = new URLSearchParams(window.location.hash.substring(1))
-                const urlParams = new URLSearchParams(window.location.search)
+                // Apply rate limiting
+                checkRateLimit();
 
-                console.log('Hash params:', Object.fromEntries(hashParams))
-                console.log('URL params:', Object.fromEntries(urlParams))
+                console.log('=== EMAIL VERIFICATION HANDLER ===');
+                console.log('Timestamp:', new Date().toISOString());
+                console.log('Full URL:', window.location.href);
+                console.log('Hash:', window.location.hash);
+                console.log('Search:', window.location.search);
+                console.log('User Agent:', navigator.userAgent);
 
-                // Store tokens globally for later deep link use
-                globalAccessToken = hashParams.get('access_token') || urlParams.get('access_token')
-                globalRefreshToken = hashParams.get('refresh_token') || urlParams.get('refresh_token')
-                const tokenType = hashParams.get('token_type') || urlParams.get('token_type')
-                const type = hashParams.get('type') || urlParams.get('type')
+                // Parse URL parameters from both hash and search
+                let urlParams;
+                let paramSource;
 
-                console.log('🔒 Tokens extracted and secured:', {
-                    hasAccessToken: !!globalAccessToken,
-                    hasRefreshToken: !!globalRefreshToken,
-                    accessTokenLength: globalAccessToken?.length,
-                    refreshTokenLength: globalRefreshToken?.length
-                })
-
-                console.log('Extracted tokens:', {
-                    accessToken: globalAccessToken ? 'present' : 'missing',
-                    refreshToken: globalRefreshToken ? 'present' : 'missing',
-                    tokenType,
-                    type
-                })
-
-                // Security: Block access without valid tokens
-                if (!globalAccessToken || !globalRefreshToken) {
-                    throw new Error('Acceso no autorizado. Esta página solo es accesible desde enlaces de verificación de email.')
-                }
-
-                // Security: Only allow signup confirmations
-                if (type !== 'signup') {
-                    throw new Error('Tipo de confirmación no válido')
-                }
-
-                // Security: Enhanced token validation with proper refresh token handling
-                function validateAccessToken(token) {
-                    try {
-                        const parts = token.split('.')
-                        if (parts.length !== 3) {
-                            throw new Error('Invalid JWT structure')
-                        }
-
-                        const payload = JSON.parse(atob(parts[1]))
-                        const now = Math.floor(Date.now() / 1000)
-
-                        console.log('Access token validation - aud:', payload.aud)
-
-                        // SECURITY: Environment-based issuer validation (no hardcoding)
-                        const expectedIssuer = `${window.MANITO_CONFIG.supabaseUrl}/auth/v1`
-                        if (payload.iss !== expectedIssuer) {
-                            console.error('Invalid issuer - expected:', expectedIssuer, 'got:', payload.iss)
-                            throw new Error('Invalid token issuer')
-                        }
-
-                        // Verify expiration
-                        if (!payload.exp || payload.exp < now) {
-                            throw new Error('Token expired or missing expiration')
-                        }
-
-                        // Verify this is for authentication
-                        if (payload.aud !== 'authenticated') {
-                            throw new Error('Invalid token audience: ' + payload.aud)
-                        }
-
-                        // Additional security: Check issued-at time is reasonable
-                        if (payload.iat && payload.iat > now) {
-                            throw new Error('Token issued in the future')
-                        }
-
-                        return true
-                    } catch (e) {
-                        throw new Error('Access token validation failed: ' + e.message)
-                    }
-                }
-
-                function validateRefreshToken(token) {
-                    try {
-                        // Supabase refresh tokens are opaque strings, not JWTs
-                        // Basic validation: ensure it's a reasonable format
-                        if (!token || typeof token !== 'string') {
-                            throw new Error('Refresh token must be a string')
-                        }
-
-                        // Supabase refresh tokens are typically 12+ characters of alphanumeric
-                        if (token.length < 8) {
-                            throw new Error('Refresh token too short')
-                        }
-
-                        // Basic format check - should be alphanumeric (Supabase pattern)
-                        if (!/^[a-zA-Z0-9]+$/.test(token)) {
-                            throw new Error('Refresh token invalid format')
-                        }
-
-                        console.log('Refresh token validation passed - length:', token.length)
-                        return true
-                    } catch (e) {
-                        throw new Error('Refresh token validation failed: ' + e.message)
-                    }
-                }
-
-                // SECURITY: Validate both tokens with proper handling
-                try {
-                    validateAccessToken(globalAccessToken)
-                    validateRefreshToken(globalRefreshToken)
-                    console.log('Token validation passed')
-                } catch (validationError) {
-                    console.error('Token validation failed:', validationError.message)
-                    throw new Error('Tokens de autenticación inválidos')
-                }
-
-                // Set the session using the tokens
-                console.log('Calling supabase.auth.setSession...')
-                const { data, error } = await supabase.auth.setSession({
-                    access_token: globalAccessToken,
-                    refresh_token: globalRefreshToken
-                })
-
-                console.log('Supabase setSession response:', { data, error })
-
-                if (error) {
-                    console.error('Supabase setSession error:', error)
-                    throw error
-                }
-
-                console.log('✅ Auth callback: Email confirmation successful:', {
-                    hasUser: !!data.user,
-                    emailConfirmed: !!data.user?.email_confirmed_at,
-                    sessionSet: true
-                })
-
-                // Create user profile in custom users table
-                console.log('🔄 Creating user profile...')
-                try {
-                    // Use the secure function that only works for authenticated users
-                    // After setSession, the user should be authenticated
-                    console.log('📞 Calling create_user_profile_secure...')
-                    const { data: profileData, error: profileError } = await supabase.rpc('create_user_profile_secure')
-
-                    console.log('📊 Profile creation result:', {
-                        success: !profileError,
-                        data: profileData,
-                        error: profileError?.message,
-                        errorCode: profileError?.code
-                    })
-
-                    if (profileError) {
-                        console.error('❌ Profile creation failed:', {
-                            message: profileError.message,
-                            code: profileError.code,
-                            details: profileError.details,
-                            hint: profileError.hint
-                        })
-                        // Check if it's an auth error vs other error
-                        if (profileError.message?.includes('Authentication required') || profileError.message?.includes('Not authorized')) {
-                            console.error('🚨 SECURITY: User not properly authenticated after setSession')
-                        }
-                        // Don't fail the whole flow - user is still authenticated
-                    } else {
-                        console.log('✅ User profile created successfully:', profileData)
-                    }
-                } catch (profileErr) {
-                    console.error('💥 Profile creation exception:', {
-                        message: profileErr.message,
-                        stack: profileErr.stack
-                    })
-                    // Don't fail the whole flow - user is still authenticated
-                }
-
-                // Platform-aware success handling
-                const platform = detectPlatform();
-
-                if (platform.isMobile) {
-                    console.log('📱 Mobile device detected - attempting immediate app redirect');
-                    showSuccess()
-                    // On mobile, try immediate redirect
-                    setTimeout(() => {
-                        tryDeepLinkMobile()
-                    }, 1000)
+                // Check hash first (implicit flow)
+                if (window.location.hash) {
+                    urlParams = new URLSearchParams(window.location.hash.substring(1));
+                    paramSource = 'hash';
+                } else if (window.location.search) {
+                    // Fallback to query parameters
+                    urlParams = new URLSearchParams(window.location.search);
+                    paramSource = 'search';
                 } else {
-                    console.log('🖥️ Desktop device detected - showing mobile instructions');
-                    showDesktopSuccess()
+                    // No parameters at all
+                    console.log('❌ No URL parameters found');
+                    throw new Error('Acceso no autorizado');
                 }
+
+                console.log('URL params source:', paramSource);
+                console.log('URL params:', urlParams.toString());
+
+                // Extract all possible parameters
+                const {
+                    // Success parameters
+                    access_token: accessToken,
+                    refresh_token: refreshToken,
+                    expires_in: expiresIn,
+                    expires_at: expiresAt,
+                    token_type: tokenType,
+                    type,
+                    flow,
+                    // Error parameters
+                    error,
+                    error_code: errorCode,
+                    error_description: errorDescription
+                } = Object.fromEntries(urlParams.entries());
+
+                console.log('Extracted parameters:', {
+                    hasAccessToken: !!accessToken,
+                    hasRefreshToken: !!refreshToken,
+                    tokenType,
+                    type,
+                    flow,
+                    error,
+                    errorCode,
+                    paramSource
+                });
+
+                // Handle errors first
+                if (error) {
+                    console.error('❌ Error in URL parameters:', {
+                        error,
+                        errorCode,
+                        errorDescription,
+                        type
+                    });
+
+                    let userMessage;
+
+                    // Handle specific error types
+                    if (type === 'unauthorized' || error.includes('no autorizado')) {
+                        throw new Error('Acceso no autorizado');
+                    } else if (error.includes('expirado') || error.includes('expired')) {
+                        userMessage = 'El enlace de verificación ha expirado. Solicita uno nuevo desde la aplicación.';
+                    } else if (error.includes('inválido') || error.includes('invalid')) {
+                        userMessage = 'El enlace de verificación es inválido. Verifica que hayas copiado la URL completa.';
+                    } else {
+                        userMessage = errorDescription || error || 'Error desconocido en la verificación';
+                    }
+
+                    throw new Error(userMessage);
+                }
+
+                // Check for success case - we have tokens
+                if (accessToken && refreshToken) {
+                    console.log('✅ Authentication tokens found - processing verification');
+
+                    // Validate token format (basic security check)
+                    if (!isValidToken(accessToken, 'access') || !isValidToken(refreshToken, 'refresh')) {
+                        console.error('❌ Invalid token format detected');
+                        throw new Error('Tokens de autenticación inválidos. Solicita una nueva verificación.');
+                    }
+
+                    // Create session object
+                    const sessionData = {
+                        access_token: accessToken,
+                        refresh_token: refreshToken,
+                        token_type: tokenType || 'bearer'
+                    };
+
+                    // Add expiration if available
+                    if (expiresAt) {
+                        sessionData.expires_at = parseInt(expiresAt);
+                    } else if (expiresIn) {
+                        sessionData.expires_at = Math.floor(Date.now() / 1000) + parseInt(expiresIn);
+                    }
+
+                    console.log('🔐 Setting session in Supabase client...');
+                    const { data, error: sessionError } = await supabase.auth.setSession(sessionData);
+
+                    if (sessionError) {
+                        console.error('❌ Session creation failed:', sessionError);
+                        throw new Error(`Error estableciendo sesión: ${sessionError.message}`);
+                    }
+
+                    if (!data?.user || !data?.session) {
+                        console.error('❌ Invalid session data received:', {
+                            hasUser: !!data?.user,
+                            hasSession: !!data?.session
+                        });
+                        throw new Error('Datos de sesión inválidos recibidos del servidor');
+                    }
+
+                    console.log('✅ Email verification successful!');
+                    console.log('User details:', {
+                        id: data.user.id,
+                        email: data.user.email,
+                        emailConfirmed: !!data.user.email_confirmed_at,
+                        userType: data.user.user_metadata?.user_type || 'unknown'
+                    });
+
+                    // Profile creation monitoring (handled by database triggers)
+                    await monitorProfileCreation(data.user);
+
+                    // Generate mobile deep link
+                    const deepLinkUrl = generateMobileDeepLink(data.session);
+
+                    // Show success state
+                    showSuccess(deepLinkUrl);
+                    return;
+                }
+
+                // If we get here, no valid tokens found
+                console.log('❌ No valid authentication tokens found');
+                throw new Error('Acceso no autorizado');
 
             } catch (error) {
-                console.error('Email confirmation error:', error)
-                showError(error.message)
-            }
-        }
-
-        function showSuccess() {
-            document.getElementById('loading-state').style.display = 'none'
-            document.getElementById('success-state').style.display = 'block'
-        }
-
-        function showDesktopSuccess() {
-            document.getElementById('loading-state').style.display = 'none'
-            const successDiv = document.getElementById('success-state')
-            successDiv.style.display = 'block'
-
-            // Update content for desktop users
-            const titleElement = successDiv.querySelector('h1')
-            const messageElement = successDiv.querySelector('p')
-            const buttonElement = successDiv.querySelector('button')
-
-            if (titleElement) {
-                titleElement.innerHTML = '✅ Email Verificado'
-            }
-
-            if (messageElement) {
-                messageElement.innerHTML = `
-                    <div style="background: #F0FDF4; padding: 20px; border-radius: 12px; border-left: 4px solid #10B981; margin: 20px 0;">
-                        <div style="color: #10B981; font-size: 18px; font-weight: bold; margin-bottom: 12px;">
-                            📱 Abre Manito en tu dispositivo móvil
-                        </div>
-                        <div style="color: #059669; line-height: 1.5;">
-                            Tu email ha sido verificado exitosamente. La sesión se sincronizará automáticamente cuando abras la aplicación Manito en tu dispositivo móvil.
-                        </div>
-                    </div>
-
-                    <div style="color: #6B7280; font-size: 14px; margin-top: 16px; padding: 12px; background: #F9FAFB; border-radius: 8px;">
-                        💡 <strong>Consejo:</strong> Si ya tienes la app abierta, simplemente regresa a ella para continuar.
-                    </div>
-                `
-            }
-
-            if (buttonElement) {
-                buttonElement.innerHTML = '📱 Entendido'
-                buttonElement.style.background = '#10B981'
-            }
-        }
-
-        function showError(message) {
-            document.getElementById('loading-state').style.display = 'none'
-
-            // Show unauthorized state for access control errors
-            if (message.includes('Acceso no autorizado') || message.includes('no autorizado')) {
-                document.getElementById('unauthorized-state').style.display = 'block'
-            } else {
-                document.getElementById('error-message').textContent = message
-                document.getElementById('error-state').style.display = 'block'
-            }
-        }
-
-        async function tryDeepLinkMobile() {
-            console.log('📱 Attempting mobile app redirect with secure session...');
-
-            // CRITICAL FIX: Use globally stored tokens instead of re-extracting from hash
-            console.log('🔒 Using globally stored tokens for secure session creation:', {
-                hasAccessToken: !!globalAccessToken,
-                hasRefreshToken: !!globalRefreshToken,
-                accessTokenLength: globalAccessToken?.length,
-                refreshTokenLength: globalRefreshToken?.length
-            })
-
-            // Create secure deep link using session code instead of raw tokens
-            let appScheme;
-            try {
-                const response = await fetch('/api/create-secure-session', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        access_token: globalAccessToken,
-                        refresh_token: globalRefreshToken,
-                        type: 'signup'
-                    })
+                console.error('💥 Email confirmation handler error:', {
+                    message: error.message,
+                    stack: error.stack,
+                    url: window.location.href
                 });
+                showError(error.message);
+            }
+        }
 
-                if (!response.ok) {
-                    throw new Error('Failed to create secure session code');
+        /**
+         * Monitor profile creation (non-blocking)
+         */
+        async function monitorProfileCreation(user) {
+            try {
+                console.log('📊 Monitoring profile creation via database triggers...');
+
+                // Wait a bit for trigger to process
+                await new Promise(resolve => setTimeout(resolve, 1000));
+
+                const { data: profileStatus, error: profileError } = await supabase
+                    .rpc('get_user_profile_status');
+
+                if (profileError) {
+                    console.warn('⚠️ Profile status check failed:', profileError.message);
+                } else if (profileStatus?.success) {
+                    if (profileStatus.profile_exists) {
+                        console.log('✅ User profile confirmed via database trigger');
+                    } else {
+                        console.log('⏳ Profile creation in progress via database trigger');
+                        // Could implement retry logic here if needed
+                    }
+                } else {
+                    console.warn('⚠️ Unexpected profile status response:', profileStatus);
                 }
+            } catch (error) {
+                console.warn('⚠️ Profile monitoring failed (non-critical):', error.message);
+            }
+        }
 
-                const { session_code } = await response.json();
-                appScheme = `manito://auth/callback?session_code=${session_code}&type=signup`;
+        /**
+         * Token validation for Supabase tokens
+         */
+        function isValidToken(token, tokenType = 'access') {
+            if (!token || typeof token !== 'string') return false;
 
-                console.log('🔗 Created secure deep link:', {
-                    hasSessionCode: !!session_code,
-                    deepLinkLength: appScheme.length
-                });
-            } catch (secureError) {
-                console.warn('⚠️ Falling back to direct tokens due to secure session error:', secureError);
-                // Fallback to direct tokens if secure session creation fails
-                appScheme = `manito://auth/callback?access_token=${globalAccessToken}&refresh_token=${globalRefreshToken}&type=signup`;
-
-                console.log('🔗 Created fallback deep link:', {
-                    hasTokens: !!(globalAccessToken && globalRefreshToken),
-                    deepLinkLength: appScheme.length
-                });
+            // Access tokens are JWTs (3 parts separated by dots)
+            if (tokenType === 'access') {
+                const parts = token.split('.');
+                return parts.length === 3 && parts.every(part => part.length > 0);
             }
 
-            console.log('📱 Mobile deep link:', {
-                hasAccessToken: !!globalAccessToken,
-                hasRefreshToken: !!globalRefreshToken,
-                tokenLength: globalAccessToken?.length,
-                deepLinkLength: appScheme.length
-            })
+            // Refresh tokens are opaque strings (not JWTs)
+            if (tokenType === 'refresh') {
+                return token.length > 10; // Basic length check for refresh tokens
+            }
 
-            try {
-                // Method 1: Direct redirect (most effective on mobile)
-                console.log('📱 Attempting direct redirect to app...')
-                window.location.href = appScheme
+            return false;
+        }
 
-                // Method 2: Fallback with immediate retry for iOS/Android compatibility
-                setTimeout(() => {
-                    const link = document.createElement('a')
-                    link.href = appScheme
-                    link.style.display = 'none'
-                    document.body.appendChild(link)
-                    link.click()
-                    document.body.removeChild(link)
-                    console.log('📱 Mobile fallback deep link attempted')
-                }, 500)
+        // Generate secure deep link for mobile app with session tokens
+        function generateMobileDeepLink(session) {
+            if (!session?.access_token || !session?.refresh_token) {
+                console.warn('No session tokens available for deep link');
+                return null;
+            }
 
-                // Method 3: Additional iOS-specific fallback using iframe
-                const platform = detectPlatform()
-                if (platform.isIOS) {
+            // Detect environment and use appropriate URL scheme
+            const isDevelopment = window.location.hostname === 'localhost' || window.location.hostname.includes('localhost');
+            const isProduction = window.location.hostname === 'auth.manito.cl';
+
+            let baseUrl;
+            if (isDevelopment) {
+                baseUrl = 'exp://localhost:8085/--/auth/callback'; // Expo development (port 8085)
+            } else if (isProduction) {
+                baseUrl = 'manito://auth/callback'; // Production app scheme
+            } else {
+                // Staging or other environments
+                baseUrl = 'manito-staging://auth/callback';
+            }
+
+            // Create deep link with tokens (following Supabase documentation)
+            const params = new URLSearchParams({
+                access_token: session.access_token,
+                refresh_token: session.refresh_token,
+                expires_at: session.expires_at?.toString() || '',
+                token_type: session.token_type || 'bearer'
+            });
+
+            return `${baseUrl}?${params.toString()}`;
+        }
+
+        function showSuccess(deepLinkUrl = null) {
+            document.getElementById('loading-state').style.display = 'none';
+            document.getElementById('success-state').style.display = 'block';
+
+            // Show mobile deep link option if available
+            if (deepLinkUrl) {
+                const mobileLinkSection = document.getElementById('mobile-link-section');
+                const openAppBtn = document.getElementById('open-app-btn');
+
+                mobileLinkSection.style.display = 'block';
+                openAppBtn.onclick = () => {
+                    window.location.href = deepLinkUrl;
+                    // Fallback: try to close window after attempting to open app
                     setTimeout(() => {
-                        const iframe = document.createElement('iframe')
-                        iframe.src = appScheme
-                        iframe.style.display = 'none'
-                        document.body.appendChild(iframe)
-                        setTimeout(() => document.body.removeChild(iframe), 1000)
-                        console.log('📱 iOS iframe deep link attempted')
-                    }, 1000)
-                }
-
-                // Method 4: Update UI with professional fallback option
-                setTimeout(() => {
-                    const successDiv = document.getElementById('success-state')
-                    if (successDiv && successDiv.style.display !== 'none') {
-                        const messageElement = successDiv.querySelector('p')
-                        if (messageElement) {
-                            messageElement.innerHTML = `
-                                <div style="color: #10B981; font-size: 18px; font-weight: bold; margin-bottom: 16px;">
-                                    ✅ ¡Email Verificado!
-                                </div>
-                                <div style="background: #F0FDF4; padding: 16px; border-radius: 8px; border-left: 4px solid #10B981; margin: 16px 0;">
-                                    <strong>📱 Abriendo Manito...</strong><br>
-                                    <span style="color: #059669;">Si la app no se abre automáticamente en 3 segundos, usa el botón de abajo.</span>
-                                </div>
-                            `
-                        }
-
-                        const buttonElement = successDiv.querySelector('button')
-                        if (buttonElement) {
-                            buttonElement.innerHTML = '📱 Abrir Manito'
-                            buttonElement.style.background = '#10B981'
-                            buttonElement.onclick = function() {
-                                window.location.href = appScheme
-                            }
-                        }
-                    }
-                }, 2000)
-
-            } catch (error) {
-                console.error('❌ Mobile deep link failed:', error)
-                // Show error-specific message
-                const successDiv = document.getElementById('success-state')
-                if (successDiv) {
-                    const messageElement = successDiv.querySelector('p')
-                    if (messageElement) {
-                        messageElement.innerHTML = `
-                            <div style="color: #10B981; font-size: 18px; font-weight: bold; margin-bottom: 16px;">
-                                ✅ ¡Email Verificado!
-                            </div>
-                            <div style="background: #FEF3C7; padding: 16px; border-radius: 8px; border-left: 4px solid #F59E0B; margin: 16px 0;">
-                                <strong>📱 Abre Manito manualmente</strong><br>
-                                <span style="color: #92400E;">Tu cuenta está verificada. Abre la app Manito para continuar.</span>
-                            </div>
-                        `
-                    }
-                }
+                        closeWindow();
+                    }, 1000);
+                };
             }
-
-            // SECURITY: Clear tokens immediately after successful deep link attempts
-            setTimeout(() => {
-                globalAccessToken = null
-                globalRefreshToken = null
-                console.log('🔒 Tokens cleared from memory for security')
-            }, 3000) // Reduced timeout for better security
         }
 
-        async function tryDeepLink() {
-            console.log('🔗 Attempting to redirect to mobile app with secure session...')
+        /**
+         * Enhanced error display with better categorization
+         */
+        function showError(message) {
+            console.log('🚨 Showing error state:', message);
+            document.getElementById('loading-state').style.display = 'none';
 
-            // CRITICAL FIX: Use globally stored tokens instead of re-extracting from hash
-            // Hash parameters may have been consumed/cleared by setSession()
-            console.log('🔒 Using globally stored tokens for secure session creation:', {
-                hasAccessToken: !!globalAccessToken,
-                hasRefreshToken: !!globalRefreshToken,
-                accessTokenLength: globalAccessToken?.length,
-                refreshTokenLength: globalRefreshToken?.length
-            })
+            // Categorize error types for better UX
+            const lowerMessage = message.toLowerCase();
 
-            // Create secure deep link using session code instead of raw tokens
-            let appScheme;
-            try {
-                const response = await fetch('/api/create-secure-session', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        access_token: globalAccessToken,
-                        refresh_token: globalRefreshToken,
-                        type: 'signup'
-                    })
-                });
-
-                if (!response.ok) {
-                    throw new Error('Failed to create secure session code');
-                }
-
-                const { session_code } = await response.json();
-                appScheme = `manito://auth/callback?session_code=${session_code}&type=signup`;
-
-                console.log('🔗 Created secure deep link:', {
-                    hasSessionCode: !!session_code,
-                    deepLinkLength: appScheme.length
-                });
-            } catch (secureError) {
-                console.warn('⚠️ Falling back to direct tokens due to secure session error:', secureError);
-                // Fallback to direct tokens if secure session creation fails
-                appScheme = `manito://auth/callback?access_token=${globalAccessToken}&refresh_token=${globalRefreshToken}&type=signup`;
-
-                console.log('🔗 Created fallback deep link:', {
-                    hasTokens: !!(globalAccessToken && globalRefreshToken),
-                    deepLinkLength: appScheme.length
-                });
-            }
-
-            console.log('🔗 Deep link with tokens:', {
-                hasAccessToken: !!globalAccessToken,
-                hasRefreshToken: !!globalRefreshToken,
-                tokenLength: globalAccessToken?.length,
-                deepLinkLength: appScheme.length
-            })
-
-            try {
-                // Method 1: Try window.location (most reliable)
-                window.location.href = appScheme
-
-                // Method 2: Fallback to hidden link approach
-                setTimeout(() => {
-                    const link = document.createElement('a')
-                    link.href = appScheme
-                    link.style.display = 'none'
-                    document.body.appendChild(link)
-                    link.click()
-                    document.body.removeChild(link)
-                    console.log('🔗 Deep link with tokens attempted via hidden link')
-                }, 500)
-
-            } catch (error) {
-                console.error('❌ Deep link failed:', error)
-            }
-
-            // SECURITY: Clear tokens from memory after use (best practice)
-            setTimeout(() => {
-                globalAccessToken = null
-                globalRefreshToken = null
-                console.log('🔒 Tokens cleared from memory for security')
-            }, 3000) // Reduced timeout for better security
-
-            // Update success message with clear manual instructions
-            setTimeout(() => {
-                const successDiv = document.getElementById('success-state')
-                if (successDiv && successDiv.style.display !== 'none') {
-                    const titleElement = successDiv.querySelector('h1')
-                    const messageElement = successDiv.querySelector('p')
-                    const buttonElement = successDiv.querySelector('button')
-
-                    if (titleElement) {
-                        titleElement.innerHTML = '¡Email Verificado Exitosamente! 🎉'
-                    }
-
-                    if (messageElement) {
-                        messageElement.innerHTML = `
-                            <strong style="color: #10B981; font-size: 18px;">✅ Tu cuenta está lista</strong><br><br>
-
-                            <div style="background: #F0FDF4; padding: 16px; border-radius: 8px; border-left: 4px solid #10B981; margin: 16px 0;">
-                                <strong>📱 Regresa a la aplicación Manito</strong><br>
-                                <span style="color: #059669;">Tu sesión se sincronizará automáticamente cuando abras la app.</span>
-                            </div>
-
-                            <div style="color: #6B7280; font-size: 14px; margin-top: 16px;">
-                                💡 <strong>Consejo:</strong> Si ya tienes la app abierta, simplemente toca la pantalla para refrescar.
-                            </div>
-                        `
-                    }
-
-                    if (buttonElement) {
-                        buttonElement.innerHTML = '📱 Entendido - Volver a Manito'
-                        buttonElement.style.background = '#10B981'
-                        buttonElement.style.fontSize = '16px'
-                        buttonElement.style.padding = '14px 28px'
-                    }
-                }
-            }, 1000)
-        }
-
-        // Make closeWindow globally available
-        window.closeWindow = function() {
-            if (window.opener) {
-                window.close()
+            if (lowerMessage.includes('acceso no autorizado') ||
+                lowerMessage.includes('no autorizado') ||
+                lowerMessage.includes('unauthorized')) {
+                document.getElementById('unauthorized-state').style.display = 'block';
             } else {
-                // Try to go back or close
-                history.back()
-                setTimeout(() => window.close(), 100)
+                // Sanitize message before displaying
+                const sanitizedMessage = sanitizeErrorMessage(message);
+                document.getElementById('error-message').textContent = sanitizedMessage;
+                document.getElementById('error-state').style.display = 'block';
             }
         }
 
-        // Start the process
-        handleEmailConfirmation()
+        /**
+         * Sanitize error messages for display
+         */
+        function sanitizeErrorMessage(message) {
+            if (!message || typeof message !== 'string') {
+                return 'Error desconocido. Intenta nuevamente más tarde.';
+            }
+
+            // Remove potentially dangerous content
+            let sanitized = message
+                .replace(/<[^>]*>/g, '') // Remove HTML tags
+                .replace(/[<>"'&]/g, '') // Remove dangerous characters
+                .substring(0, 300); // Limit length
+
+            // Ensure we have a user-friendly message
+            if (sanitized.length < 5) {
+                sanitized = 'Error en la verificación. Intenta nuevamente.';
+            }
+
+            return sanitized;
+        }
+
+        /**
+         * Enhanced window closing with better mobile support
+         */
+        window.closeWindow = function() {
+            console.log('🔄 Attempting to close window...');
+
+            try {
+                // Try different methods in order of preference
+                if (window.opener) {
+                    console.log('Closing popup window');
+                    window.close();
+                } else if (history.length > 1) {
+                    console.log('Going back in history');
+                    history.back();
+                } else {
+                    console.log('Attempting direct window close');
+                    window.close();
+                }
+            } catch (error) {
+                console.warn('Could not close window:', error.message);
+                // Fallback: just hide the content
+                document.body.innerHTML = '<div style="text-align: center; padding: 50px; font-family: sans-serif;"><h2>✅ Proceso Completado</h2><p>Puedes cerrar esta ventana manualmente.</p></div>';
+            }
+        };
+
+        /**
+         * Initialize the verification process
+         */
+        function initialize() {
+            console.log('🚀 Initializing email verification handler');
+
+            // Add error boundary
+            window.addEventListener('unhandledrejection', (event) => {
+                console.error('🚨 Unhandled promise rejection:', event.reason);
+                showError('Error inesperado. Intenta nuevamente más tarde.');
+                event.preventDefault();
+            });
+
+            window.addEventListener('error', (event) => {
+                console.error('🚨 Unhandled error:', event.error);
+                showError('Error inesperado. Intenta nuevamente más tarde.');
+            });
+
+            // Start the verification process
+            handleEmailConfirmation();
+        }
+
+        // Start when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initialize);
+        } else {
+            initialize();
+        }
     </script>
 </body>
 </html>
