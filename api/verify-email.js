@@ -135,7 +135,7 @@ export default async function handler(req, res) {
       }, res);
     }
 
-    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
       auth: {
         autoRefreshToken: false,
         persistSession: false
@@ -144,10 +144,10 @@ export default async function handler(req, res) {
 
     console.log("Supabase client configuration:", {
       url: supabaseUrl,
-      usingAnonKey: true,
-      hasAnonKey: !!supabaseAnonKey,
-      anonKeyLength: supabaseAnonKey?.length || 0,
-      note: "Testing anon key with verifyOtp - service role might not work for this"
+      usingServiceKey: true,
+      hasServiceKey: !!supabaseServiceKey,
+      serviceKeyLength: supabaseServiceKey?.length || 0,
+      note: "Using service role key - anon key failed with unexpected_failure"
     });
 
     // OFFICIAL PKCE FLOW: Call verifyOtp with token_hash (2025 Supabase best practices)
