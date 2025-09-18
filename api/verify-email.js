@@ -53,7 +53,7 @@ export default async function handler(req, res) {
     console.log("Query params:", req.query);
     console.log("User-Agent:", req.headers['user-agent']);
 
-    // Extract PKCE parameters (Industry best practice)
+    // Extract PKCE parameters (Industry best practice for email/password)
     const {
       token_hash,
       type = "email",
@@ -62,7 +62,7 @@ export default async function handler(req, res) {
       error_description
     } = req.query;
 
-    console.log("PKCE Parameters (Industry standard):", {
+    console.log("PKCE Parameters (Industry standard for email/password):", {
       hasTokenHash: !!token_hash,
       tokenHashLength: token_hash?.length || 0,
       tokenHashPreview: token_hash?.substring(0, 20) + "...",
@@ -110,9 +110,11 @@ export default async function handler(req, res) {
     // Validate token_hash parameter (required for PKCE flow)
     if (!token_hash || typeof token_hash !== 'string') {
       console.log("No token_hash found - unauthorized access");
+      console.log("ERROR: Supabase project may be configured for OAuth instead of PKCE");
+      console.log("SOLUTION: Check Supabase Auth Settings - should use PKCE flow for email/password");
       return redirectToFrontend({
-        error: "Acceso no autorizado",
-        type: "unauthorized"
+        error: "Configuración incorrecta. Contacta soporte técnico.",
+        type: "error"
       }, res);
     }
 
@@ -206,19 +208,36 @@ export default async function handler(req, res) {
       hasSession: !!data.session
     });
 
+    // STANDARD OAUTH 2.1: Email verification complete - session established
+
     // Profile creation will be handled by Enterprise Redux middleware in mobile app
     console.log("📱 Profile creation will be handled by Enterprise Redux workflow in mobile app");
     console.log("ℹ️ NOTE: enterpriseProfileService.ts handles profile creation with retry logic");
 
-    // PKCE SUCCESS: Return session data for frontend (Industry standard)
-    return redirectToFrontend({
-      access_token: data.session.access_token,
-      refresh_token: data.session.refresh_token,
-      expires_in: data.session.expires_in?.toString() || "3600",
-      token_type: data.session.token_type || "bearer",
-      type: "success",
-      flow: "pkce"
-    }, res);
+    // PKCE SUCCESS: Support both mobile app and browser verification
+    console.log("🎉 PKCE verification successful - supporting both mobile app and browser");
+
+    // Check User-Agent to determine if request is from mobile app or browser
+    const userAgent = req.headers['user-agent'] || '';
+    const isMobileApp = userAgent.includes('Expo') || userAgent.includes('ReactNative') || userAgent.includes('manito');
+
+    if (isMobileApp) {
+      // Mobile app: Redirect to deep link
+      const mobileDeepLink = `manito://auth/verified?access_token=${data.session.access_token}&refresh_token=${data.session.refresh_token}&expires_in=${data.session.expires_in}&type=success&flow=pkce`;
+      console.log("📱 Mobile app detected - redirecting to deep link:", mobileDeepLink);
+      return res.redirect(302, mobileDeepLink);
+    } else {
+      // Browser: Return tokens via frontend with hash fragment (for development/web)
+      console.log("🌐 Browser detected - returning session tokens to frontend");
+      return redirectToFrontend({
+        access_token: data.session.access_token,
+        refresh_token: data.session.refresh_token,
+        expires_in: data.session.expires_in?.toString() || "3600",
+        token_type: data.session.token_type || "bearer",
+        type: "success",
+        flow: "pkce"
+      }, res);
+    }
 
   } catch (error) {
     const processingTime = Date.now() - startTime;
