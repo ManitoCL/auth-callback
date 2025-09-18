@@ -206,9 +206,9 @@ export default async function handler(req, res) {
       hasSession: !!data.session
     });
 
-    // Profile creation is handled by database triggers automatically
-    console.log("📝 Profile will be created automatically by database trigger");
-    console.log("⚠️ NOTE: If this step fails, check database triggers for profile creation");
+    // Profile creation will be handled by Enterprise Redux middleware in mobile app
+    console.log("📱 Profile creation will be handled by Enterprise Redux workflow in mobile app");
+    console.log("ℹ️ NOTE: enterpriseProfileService.ts handles profile creation with retry logic");
 
     // PKCE SUCCESS: Return session data for frontend
     return redirectToFrontend({

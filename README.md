@@ -1,26 +1,31 @@
-# Manito Email Verification Fix
+# Manito Enterprise Auth Callback
 
-## Problem
-The Vercel edge function at https://auth.manito.cl was showing "Acceso no autorizado" error when handling email verification codes from Supabase.
+## Overview
+Authentication callback service for the Manito mobile app's Enterprise Redux workflow. Handles PKCE email verification and generates deep links compatible with the new Redux-based authentication system.
 
-## Root Cause
-The previous implementation expected Supabase to redirect with tokens directly in the URL hash, but Supabase email verification actually sends a `code` parameter that needs to be exchanged for tokens server-side.
+## Enterprise Redux Integration
+This service has been updated to work with Manito's new enterprise authentication architecture:
+- Redux Toolkit state management
+- RTK Query server state caching
+- Enterprise auth middleware
+- Background profile creation via `enterpriseProfileService.ts`
 
 ## Solution
-Created a proper email verification flow:
+PKCE email verification flow with Enterprise Redux compatibility:
 
 1. **New API Endpoint**: `/api/verify-email.js` handles the `?code=xxx` parameter
 2. **Code Exchange**: Exchanges the verification code for session tokens using Supabase
 3. **Secure Session**: Creates a secure session code for mobile app deep linking
 4. **Frontend Update**: Updated `index.html` to handle both secure session codes and direct tokens
 
-## Flow
+## Enterprise Redux Flow
 1. User clicks email verification link → `https://auth.manito.cl/verify?code=abc123`
-2. `/api/verify-email.js` validates the code with Supabase
+2. `/api/verify-email.js` validates the code with Supabase using PKCE
 3. Exchanges code for session tokens
-4. Creates secure session code
-5. Redirects to frontend with session code: `/?session_code=xyz789`
-6. Frontend retrieves tokens from session code and redirects to app: `manito://auth/callback`
+4. Frontend generates deep link with Redux-compatible parameters
+5. Redirects to mobile app: `exp://localhost:8082/--/auth/callback?access_token=xxx&auth_method=email&flow_type=pkce&verified=true`
+6. Mobile app's Enterprise auth middleware processes the deep link
+7. Profile creation handled by `enterpriseProfileService.ts` with retry logic
 
 ## Files Modified
 - `api/verify-email.js` - New email verification handler

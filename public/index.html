@@ -304,35 +304,30 @@
                         sessionData.expires_at = Math.floor(Date.now() / 1000) + parseInt(expiresIn);
                     }
 
-                    console.log('🔐 Setting session in Supabase client...');
-                    const { data, error: sessionError } = await supabase.auth.setSession(sessionData);
+                    console.log('🔐 Preparing tokens for Enterprise Redux workflow...');
+                    // NOTE: We don't set session here - Enterprise Redux middleware handles it
+                    // Session will be established in the mobile app via auth middleware
 
-                    if (sessionError) {
-                        console.error('❌ Session creation failed:', sessionError);
-                        throw new Error(`Error estableciendo sesión: ${sessionError.message}`);
+                    // Validate token structure for Redux workflow
+                    if (!sessionData.access_token || !sessionData.refresh_token) {
+                        console.error('❌ Missing required tokens for Redux workflow');
+                        throw new Error('Tokens de autenticación incompletos');
                     }
 
-                    if (!data?.user || !data?.session) {
-                        console.error('❌ Invalid session data received:', {
-                            hasUser: !!data?.user,
-                            hasSession: !!data?.session
-                        });
-                        throw new Error('Datos de sesión inválidos recibidos del servidor');
-                    }
-
-                    console.log('✅ Email verification successful!');
-                    console.log('User details:', {
-                        id: data.user.id,
-                        email: data.user.email,
-                        emailConfirmed: !!data.user.email_confirmed_at,
-                        userType: data.user.user_metadata?.user_type || 'unknown'
+                    console.log('✅ Email verification successful for Enterprise Redux workflow!');
+                    console.log('Token details:', {
+                        hasAccessToken: !!sessionData.access_token,
+                        hasRefreshToken: !!sessionData.refresh_token,
+                        tokenType: sessionData.token_type,
+                        expiresAt: sessionData.expires_at
                     });
 
-                    // Profile creation monitoring (handled by database triggers)
-                    await monitorProfileCreation(data.user);
+                    // Profile creation will be handled by Enterprise Redux middleware
+                    // via enterpriseProfileService.ts when session is established in mobile app
+                    console.log('📱 Profile creation will be handled by Enterprise Redux middleware in mobile app');
 
-                    // Generate mobile deep link
-                    const deepLinkUrl = generateMobileDeepLink(data.session);
+                    // Generate mobile deep link for Enterprise Redux workflow
+                    const deepLinkUrl = generateMobileDeepLink(sessionData);
 
                     // Show success state
                     showSuccess(deepLinkUrl);
@@ -354,34 +349,12 @@
         }
 
         /**
-         * Monitor profile creation (non-blocking)
+         * NOTE: Profile creation monitoring removed - handled by Enterprise Redux workflow
+         * Profile creation is now handled in the mobile app via:
+         * - authMiddleware.ts
+         * - enterpriseProfileService.ts
+         * - RTK Query caching
          */
-        async function monitorProfileCreation(user) {
-            try {
-                console.log('📊 Monitoring profile creation via database triggers...');
-
-                // Wait a bit for trigger to process
-                await new Promise(resolve => setTimeout(resolve, 1000));
-
-                const { data: profileStatus, error: profileError } = await supabase
-                    .rpc('get_user_profile_status');
-
-                if (profileError) {
-                    console.warn('⚠️ Profile status check failed:', profileError.message);
-                } else if (profileStatus?.success) {
-                    if (profileStatus.profile_exists) {
-                        console.log('✅ User profile confirmed via database trigger');
-                    } else {
-                        console.log('⏳ Profile creation in progress via database trigger');
-                        // Could implement retry logic here if needed
-                    }
-                } else {
-                    console.warn('⚠️ Unexpected profile status response:', profileStatus);
-                }
-            } catch (error) {
-                console.warn('⚠️ Profile monitoring failed (non-critical):', error.message);
-            }
-        }
 
         /**
          * Token validation for Supabase tokens
@@ -416,7 +389,7 @@
 
             let baseUrl;
             if (isDevelopment) {
-                baseUrl = 'exp://localhost:8085/--/auth/callback'; // Expo development (port 8085)
+                baseUrl = 'exp://localhost:8082/--/auth/callback'; // Expo development (port 8082)
             } else if (isProduction) {
                 baseUrl = 'manito://auth/callback'; // Production app scheme
             } else {
@@ -424,12 +397,16 @@
                 baseUrl = 'manito-staging://auth/callback';
             }
 
-            // Create deep link with tokens (following Supabase documentation)
+            // Create deep link with tokens (Enterprise Redux workflow)
             const params = new URLSearchParams({
                 access_token: session.access_token,
                 refresh_token: session.refresh_token,
                 expires_at: session.expires_at?.toString() || '',
-                token_type: session.token_type || 'bearer'
+                token_type: session.token_type || 'bearer',
+                // Enterprise Redux workflow flags
+                auth_method: 'email',
+                flow_type: 'pkce',
+                verified: 'true'
             });
 
             return `${baseUrl}?${params.toString()}`;
