@@ -221,23 +221,16 @@ export default async function handler(req, res) {
     const userAgent = req.headers['user-agent'] || '';
     const isMobileApp = userAgent.includes('Expo') || userAgent.includes('ReactNative') || userAgent.includes('manito');
 
-    if (isMobileApp) {
-      // Mobile app: Redirect to deep link
-      const mobileDeepLink = `manito://auth/verified?access_token=${data.session.access_token}&refresh_token=${data.session.refresh_token}&expires_in=${data.session.expires_in}&type=success&flow=pkce`;
-      console.log("📱 Mobile app detected - redirecting to deep link:", mobileDeepLink);
-      return res.redirect(302, mobileDeepLink);
-    } else {
-      // Browser: Return tokens via frontend with hash fragment (for development/web)
-      console.log("🌐 Browser detected - returning session tokens to frontend");
-      return redirectToFrontend({
-        access_token: data.session.access_token,
-        refresh_token: data.session.refresh_token,
-        expires_in: data.session.expires_in?.toString() || "3600",
-        token_type: data.session.token_type || "bearer",
-        type: "success",
-        flow: "pkce"
-      }, res);
-    }
+    // ALWAYS redirect to frontend with tokens - let frontend handle app detection
+    console.log("🌐 Redirecting to frontend with session tokens - frontend will handle mobile app detection");
+    return redirectToFrontend({
+      access_token: data.session.access_token,
+      refresh_token: data.session.refresh_token,
+      expires_in: data.session.expires_in?.toString() || "3600",
+      token_type: data.session.token_type || "bearer",
+      type: "success",
+      flow: "pkce"
+    }, res);
 
   } catch (error) {
     const processingTime = Date.now() - startTime;
