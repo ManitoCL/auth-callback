@@ -3,6 +3,7 @@
   "rewrites": [
     { "source": "/auth/confirm", "destination": "/api/verify-email" },
     { "source": "/verify", "destination": "/api/verify-email" },
+    { "source": "/auth/email-confirmed", "destination": "/index.html" },
     { "source": "/", "destination": "/index.html" },
     { "source": "/auth/callback", "destination": "/index.html" }
   ],
