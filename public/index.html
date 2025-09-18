@@ -424,7 +424,49 @@
                 const openAppBtn = document.getElementById('open-app-btn');
 
                 mobileLinkSection.style.display = 'block';
+
+                // In production, also provide Expo Go option for testing
+                if (window.location.hostname === 'auth.manito.cl') {
+                    // Create both production and Expo Go links
+                    const sessionData = {
+                        access_token: new URLSearchParams(window.location.hash.substring(1) || window.location.search).get('access_token'),
+                        refresh_token: new URLSearchParams(window.location.hash.substring(1) || window.location.search).get('refresh_token'),
+                        expires_at: new URLSearchParams(window.location.hash.substring(1) || window.location.search).get('expires_at'),
+                        token_type: new URLSearchParams(window.location.hash.substring(1) || window.location.search).get('token_type') || 'bearer'
+                    };
+
+                    const expoParams = new URLSearchParams({
+                        access_token: sessionData.access_token,
+                        refresh_token: sessionData.refresh_token,
+                        expires_at: sessionData.expires_at?.toString() || '',
+                        token_type: sessionData.token_type,
+                        auth_method: 'email',
+                        flow_type: 'pkce',
+                        verified: 'true'
+                    });
+
+                    const expoDeepLink = `exp://192.168.254.81:8081/--/auth/verified?${expoParams.toString()}`;
+
+                    // Update button text and add Expo Go option
+                    openAppBtn.textContent = 'Abrir App Manito (Producción)';
+
+                    // Add Expo Go button
+                    const expoBtn = document.createElement('button');
+                    expoBtn.textContent = 'Abrir Expo Go (Testing)';
+                    expoBtn.className = 'close-btn';
+                    expoBtn.style.margin = '10px';
+                    expoBtn.style.background = '#6B7280';
+                    expoBtn.onclick = () => {
+                        console.log('🧪 Opening Expo Go link:', expoDeepLink.substring(0, 100) + '...');
+                        window.location.href = expoDeepLink;
+                        setTimeout(() => closeWindow(), 1000);
+                    };
+
+                    openAppBtn.parentNode.insertBefore(expoBtn, openAppBtn.nextSibling);
+                }
+
                 openAppBtn.onclick = () => {
+                    console.log('📱 Opening production app link:', deepLinkUrl.substring(0, 100) + '...');
                     window.location.href = deepLinkUrl;
                     // Fallback: try to close window after attempting to open app
                     setTimeout(() => {
