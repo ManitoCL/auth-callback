@@ -127,7 +127,7 @@
         </div>
     </div>
 
-    <script src="config.js"></script>
+    <script src="/config.js"></script>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <script>
         // Rate limiting to prevent abuse
@@ -389,7 +389,7 @@
 
             let baseUrl;
             if (isDevelopment) {
-                baseUrl = 'exp://localhost:8082/--/auth/callback'; // Expo development (port 8082)
+                baseUrl = 'exp://localhost:8083/--/auth/callback'; // Expo development (port 8083)
             } else if (isProduction) {
                 baseUrl = 'manito://auth/callback'; // Production app scheme
             } else {
