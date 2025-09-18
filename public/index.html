@@ -385,17 +385,17 @@
 
             // Detect environment and generate appropriate deep link
             const isProduction = window.location.hostname === 'auth.manito.cl';
-            let baseUrl;
 
-            if (isProduction) {
-                // Production: Use the actual app scheme
-                baseUrl = 'manito://auth/verified';
-                console.log('🌐 Production environment detected - using manito:// scheme');
-            } else {
-                // Development: Use Expo development URL
-                baseUrl = 'exp://192.168.254.81:8081/--/auth/verified';
-                console.log('🛠️ Development environment detected - using exp:// scheme');
-            }
+            // For Expo testing, always use exp:// scheme even in production
+            // TODO: In real production with built app, use manito:// scheme
+            let baseUrl = 'exp://192.168.254.81:8081/--/auth/verified';
+            console.log('🧪 Using Expo development scheme for testing - exp:// scheme');
+
+            // Uncomment this when deploying to real production with built app:
+            // if (isProduction) {
+            //     baseUrl = 'manito://auth/verified';
+            //     console.log('🌐 Production environment detected - using manito:// scheme');
+            // }
 
             // Create deep link with tokens (Enterprise Redux workflow)
             const params = new URLSearchParams({
