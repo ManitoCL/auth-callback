@@ -489,42 +489,26 @@
                 refreshTokenLength: globalRefreshToken?.length
             })
 
-            // Create secure deep link using session code instead of raw tokens
-            let appScheme;
-            try {
-                const response = await fetch('/api/create-secure-session', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        access_token: globalAccessToken,
-                        refresh_token: globalRefreshToken,
-                        type: 'signup'
-                    })
-                });
+            // ENTERPRISE APPROACH: Direct tokens like Meta/Instagram (no session_code)
+            console.log('🔗 Creating enterprise deep link with direct tokens...');
 
-                if (!response.ok) {
-                    throw new Error('Failed to create secure session code');
-                }
+            const deepLinkParams = new URLSearchParams({
+                access_token: globalAccessToken,
+                refresh_token: globalRefreshToken,
+                expires_at: '', // Will be set by middleware
+                token_type: 'bearer',
+                auth_method: 'email',
+                flow_type: 'pkce',
+                verified: 'true'
+            });
 
-                const { session_code } = await response.json();
-                appScheme = `manito://auth/callback?session_code=${session_code}&type=signup`;
+            const appScheme = `manito://auth/verified?${deepLinkParams.toString()}`;
 
-                console.log('🔗 Created secure deep link:', {
-                    hasSessionCode: !!session_code,
-                    deepLinkLength: appScheme.length
-                });
-            } catch (secureError) {
-                console.warn('⚠️ Falling back to direct tokens due to secure session error:', secureError);
-                // Fallback to direct tokens if secure session creation fails
-                appScheme = `manito://auth/callback?access_token=${globalAccessToken}&refresh_token=${globalRefreshToken}&type=signup`;
-
-                console.log('🔗 Created fallback deep link:', {
-                    hasTokens: !!(globalAccessToken && globalRefreshToken),
-                    deepLinkLength: appScheme.length
-                });
-            }
+            console.log('🔗 Created enterprise deep link:', {
+                hasTokens: !!(globalAccessToken && globalRefreshToken),
+                deepLinkLength: appScheme.length,
+                scheme: 'manito://auth/verified'
+            });
 
             console.log('📱 Mobile deep link:', {
                 hasAccessToken: !!globalAccessToken,
@@ -630,42 +614,26 @@
                 refreshTokenLength: globalRefreshToken?.length
             })
 
-            // Create secure deep link using session code instead of raw tokens
-            let appScheme;
-            try {
-                const response = await fetch('/api/create-secure-session', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        access_token: globalAccessToken,
-                        refresh_token: globalRefreshToken,
-                        type: 'signup'
-                    })
-                });
+            // ENTERPRISE APPROACH: Direct tokens like Meta/Instagram (no session_code)
+            console.log('🔗 Creating enterprise deep link with direct tokens...');
 
-                if (!response.ok) {
-                    throw new Error('Failed to create secure session code');
-                }
+            const deepLinkParams = new URLSearchParams({
+                access_token: globalAccessToken,
+                refresh_token: globalRefreshToken,
+                expires_at: '', // Will be set by middleware
+                token_type: 'bearer',
+                auth_method: 'email',
+                flow_type: 'pkce',
+                verified: 'true'
+            });
 
-                const { session_code } = await response.json();
-                appScheme = `manito://auth/callback?session_code=${session_code}&type=signup`;
+            const appScheme = `manito://auth/verified?${deepLinkParams.toString()}`;
 
-                console.log('🔗 Created secure deep link:', {
-                    hasSessionCode: !!session_code,
-                    deepLinkLength: appScheme.length
-                });
-            } catch (secureError) {
-                console.warn('⚠️ Falling back to direct tokens due to secure session error:', secureError);
-                // Fallback to direct tokens if secure session creation fails
-                appScheme = `manito://auth/callback?access_token=${globalAccessToken}&refresh_token=${globalRefreshToken}&type=signup`;
-
-                console.log('🔗 Created fallback deep link:', {
-                    hasTokens: !!(globalAccessToken && globalRefreshToken),
-                    deepLinkLength: appScheme.length
-                });
-            }
+            console.log('🔗 Created enterprise deep link:', {
+                hasTokens: !!(globalAccessToken && globalRefreshToken),
+                deepLinkLength: appScheme.length,
+                scheme: 'manito://auth/verified'
+            });
 
             console.log('🔗 Deep link with tokens:', {
                 hasAccessToken: !!globalAccessToken,
