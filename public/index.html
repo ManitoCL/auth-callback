@@ -1,571 +1,87 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Confirmación de Email - Manito</title>
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline'; connect-src 'self' https://*.supabase.co;">
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+<script>
+(function() {
+  // Mobile device detection
+  function isMobileDevice() {
+    const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+    const mobileRegex = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i;
+    const isMobileUA = mobileRegex.test(userAgent);
+    const isMobileScreen = window.innerWidth <= 768 && window.innerHeight <= 1024;
+    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    return isMobileUA || (isMobileScreen && isTouchDevice);
+  }
 
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-        }
+  // Auto-redirect mobile browsers to deep link
+  function handleMobileAutoRedirect() {
+    if (!isMobileDevice()) {
+      console.log('🖥️ Desktop browser detected - showing manual options');
+      return;
+    }
 
-        .container {
-            background: white;
-            padding: 40px;
-            border-radius: 16px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-            text-align: center;
-            max-width: 500px;
-            width: 100%;
-        }
+    console.log('📱 Mobile browser detected - attempting auto-redirect to deep link');
 
-        .icon {
-            font-size: 60px;
-            margin-bottom: 20px;
-        }
+    // Extract auth parameters from URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const authParams = {
+      access_token: urlParams.get('access_token'),
+      refresh_token: urlParams.get('refresh_token'),
+      expires_at: urlParams.get('expires_at') || urlParams.get('expires_in'),
+      token_type: urlParams.get('token_type') || 'bearer',
+      auth_method: urlParams.get('auth_method') || 'email',
+      flow_type: urlParams.get('flow_type') || 'pkce',
+      verified: 'true'
+    };
 
-        .success {
-            color: #10B981;
-        }
+    // Only auto-redirect if we have valid auth tokens
+    if (authParams.access_token && authParams.refresh_token) {
+      const deepLinkParams = new URLSearchParams();
+      Object.entries(authParams).forEach(([key, value]) => {
+        if (value) deepLinkParams.set(key, value);
+      });
 
-        .error {
-            color: #EF4444;
-        }
+      const deepLink = `manito://auth/verified?${deepLinkParams.toString()}`;
 
-        h1 {
-            color: #1F2937;
-            margin-bottom: 16px;
-            font-size: 28px;
-            font-weight: 700;
-        }
+      console.log('🚀 AUTO-REDIRECTING to mobile app:', deepLink);
 
-        p {
-            color: #6B7280;
-            line-height: 1.6;
-            margin-bottom: 24px;
-            font-size: 16px;
-        }
-
-        .close-btn {
-            background: #007AFF;
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            border-radius: 8px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-
-        .close-btn:hover {
-            background: #0056CC;
-        }
-
-        .loading {
-            display: inline-block;
-            width: 40px;
-            height: 40px;
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #007AFF;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin-bottom: 20px;
-        }
-
-        @keyframes spin {
+      // Show auto-redirect message
+      const autoRedirectDiv = document.createElement('div');
+      autoRedirectDiv.innerHTML = `
+        <div style="text-align: center; padding: 20px; background: #f0f9ff; border-radius: 8px; margin: 20px;">
+          <h3 style="color: #0369a1; margin-bottom: 10px;">📱 Redirecting to Manito App...</h3>
+          <p style="color: #075985; margin-bottom: 15px;">Detected mobile device - opening Manito app automatically</p>
+          <div style="display: inline-block; width: 20px; height: 20px; border: 3px solid #0ea5e9; border-top: 3px solid transparent; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+          <p style="color: #0c4a6e; font-size: 14px; margin-top: 15px;">If the app doesn't open, use the buttons below</p>
+        </div>
+        <style>
+          @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div id="loading-state">
-            <div class="loading"></div>
-            <h1>Verificando tu email...</h1>
-            <p>Por favor espera mientras confirmamos tu cuenta.</p>
-        </div>
-
-        <div id="success-state" style="display: none;">
-            <div class="icon success">✅</div>
-            <h1>¡Email Confirmado!</h1>
-            <p>Tu cuenta ha sido verificada exitosamente.</p>
-            <div id="mobile-link-section" style="display: none; margin: 20px 0;">
-                <p style="font-size: 14px; color: #6B7280;">¿Estás en un dispositivo móvil? Toca el botón para abrir la app:</p>
-                <button id="open-app-btn" class="close-btn" style="margin: 10px;">Abrir App Manito</button>
-            </div>
-            <p style="font-size: 14px; color: #6B7280;">Puedes cerrar esta ventana y volver a la aplicación Manito.</p>
-            <button class="close-btn" onclick="closeWindow()">Cerrar Ventana</button>
-        </div>
-
-        <div id="error-state" style="display: none;">
-            <div class="icon error">❌</div>
-            <h1>Error en la Verificación</h1>
-            <p id="error-message">Hubo un problema al verificar tu email. Por favor intenta nuevamente.</p>
-            <button class="close-btn" onclick="closeWindow()">Cerrar Ventana</button>
-        </div>
-
-        <div id="unauthorized-state" style="display: none;">
-            <div class="icon error">🔒</div>
-            <h1>Acceso No Autorizado</h1>
-            <p>Esta página solo es accesible desde enlaces de verificación de email enviados por Manito.</p>
-            <button class="close-btn" onclick="closeWindow()">Cerrar Ventana</button>
-        </div>
-    </div>
-
-    <script src="/config.js"></script>
-    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
-    <script>
-        // Rate limiting to prevent abuse
-        const RATE_LIMIT = {
-            attempts: 0,
-            maxAttempts: 3,
-            resetTime: 60000, // 1 minute
-            lastReset: Date.now()
-        };
-
-        function checkRateLimit() {
-            const now = Date.now();
-            if (now - RATE_LIMIT.lastReset > RATE_LIMIT.resetTime) {
-                RATE_LIMIT.attempts = 0;
-                RATE_LIMIT.lastReset = now;
-            }
-
-            if (RATE_LIMIT.attempts >= RATE_LIMIT.maxAttempts) {
-                throw new Error('Demasiados intentos. Espera un minuto antes de intentar nuevamente.');
-            }
-
-            RATE_LIMIT.attempts++;
-        }
-
-        // Input validation and sanitization
-        function validateInput(input) {
-            if (!input || typeof input !== 'string') {
-                throw new Error('Parámetro inválido');
-            }
-
-            // Basic XSS prevention
-            const sanitized = input.replace(/[<>'"&]/g, '');
-
-            if (sanitized !== input) {
-                throw new Error('Parámetros contienen caracteres no válidos');
-            }
-
-            return sanitized;
-        }
-
-        // Secure configuration validation
-        if (!window.MANITO_CONFIG) {
-            showError('Configuración de seguridad no encontrada');
-            throw new Error('Security configuration missing');
-        }
-
-        const supabaseUrl = window.MANITO_CONFIG.supabaseUrl;
-        const supabaseKey = window.MANITO_CONFIG.supabaseKey;
-
-        if (!supabaseUrl || !supabaseKey) {
-            showError('Configuración de autenticación incompleta');
-            throw new Error('Auth configuration incomplete');
-        }
-
-        // Create Supabase client without automatic URL detection (we'll handle manually)
-        const supabase = window.supabase.createClient(supabaseUrl, supabaseKey, {
-            auth: {
-                detectSessionInUrl: false, // We'll handle verification manually
-                persistSession: true,
-                autoRefreshToken: true,
-                flowType: 'implicit',
-            }
-        });
-
-        /**
-         * Enhanced email confirmation handler with comprehensive error handling
-         */
-        async function handleEmailConfirmation() {
-            try {
-                // Apply rate limiting
-                checkRateLimit();
-
-                console.log('=== EMAIL VERIFICATION HANDLER ===');
-                console.log('Timestamp:', new Date().toISOString());
-                console.log('Full URL:', window.location.href);
-                console.log('Hash:', window.location.hash);
-                console.log('Search:', window.location.search);
-                console.log('User Agent:', navigator.userAgent);
-
-                // Parse URL parameters from both hash and search
-                let urlParams;
-                let paramSource;
-
-                // Check hash first (implicit flow)
-                if (window.location.hash) {
-                    urlParams = new URLSearchParams(window.location.hash.substring(1));
-                    paramSource = 'hash';
-                } else if (window.location.search) {
-                    // Fallback to query parameters
-                    urlParams = new URLSearchParams(window.location.search);
-                    paramSource = 'search';
-                } else {
-                    // No parameters at all
-                    console.log('❌ No URL parameters found');
-                    throw new Error('Acceso no autorizado');
-                }
-
-                console.log('URL params source:', paramSource);
-                console.log('URL params:', urlParams.toString());
-
-                // Extract all possible parameters
-                const {
-                    // Success parameters
-                    access_token: accessToken,
-                    refresh_token: refreshToken,
-                    expires_in: expiresIn,
-                    expires_at: expiresAt,
-                    token_type: tokenType,
-                    type,
-                    flow,
-                    // Error parameters
-                    error,
-                    error_code: errorCode,
-                    error_description: errorDescription
-                } = Object.fromEntries(urlParams.entries());
-
-                console.log('Extracted parameters:', {
-                    hasAccessToken: !!accessToken,
-                    hasRefreshToken: !!refreshToken,
-                    tokenType,
-                    type,
-                    flow,
-                    error,
-                    errorCode,
-                    paramSource
-                });
-
-                // Handle errors first
-                if (error) {
-                    console.error('❌ Error in URL parameters:', {
-                        error,
-                        errorCode,
-                        errorDescription,
-                        type
-                    });
-
-                    let userMessage;
-
-                    // Handle specific error types
-                    if (type === 'unauthorized' || error.includes('no autorizado')) {
-                        throw new Error('Acceso no autorizado');
-                    } else if (error.includes('expirado') || error.includes('expired')) {
-                        userMessage = 'El enlace de verificación ha expirado. Solicita uno nuevo desde la aplicación.';
-                    } else if (error.includes('inválido') || error.includes('invalid')) {
-                        userMessage = 'El enlace de verificación es inválido. Verifica que hayas copiado la URL completa.';
-                    } else {
-                        userMessage = errorDescription || error || 'Error desconocido en la verificación';
-                    }
-
-                    throw new Error(userMessage);
-                }
-
-                // Check for success case - we have tokens
-                if (accessToken && refreshToken) {
-                    console.log('✅ Authentication tokens found - processing verification');
-
-                    // Validate token format (basic security check)
-                    if (!isValidToken(accessToken, 'access') || !isValidToken(refreshToken, 'refresh')) {
-                        console.error('❌ Invalid token format detected');
-                        throw new Error('Tokens de autenticación inválidos. Solicita una nueva verificación.');
-                    }
-
-                    // Create session object
-                    const sessionData = {
-                        access_token: accessToken,
-                        refresh_token: refreshToken,
-                        token_type: tokenType || 'bearer'
-                    };
-
-                    // Add expiration if available
-                    if (expiresAt) {
-                        sessionData.expires_at = parseInt(expiresAt);
-                    } else if (expiresIn) {
-                        sessionData.expires_at = Math.floor(Date.now() / 1000) + parseInt(expiresIn);
-                    }
-
-                    console.log('🔐 Preparing tokens for Enterprise Redux workflow...');
-                    // NOTE: We don't set session here - Enterprise Redux middleware handles it
-                    // Session will be established in the mobile app via auth middleware
-
-                    // Validate token structure for Redux workflow
-                    if (!sessionData.access_token || !sessionData.refresh_token) {
-                        console.error('❌ Missing required tokens for Redux workflow');
-                        throw new Error('Tokens de autenticación incompletos');
-                    }
-
-                    console.log('✅ Email verification successful for Enterprise Redux workflow!');
-                    console.log('Token details:', {
-                        hasAccessToken: !!sessionData.access_token,
-                        hasRefreshToken: !!sessionData.refresh_token,
-                        tokenType: sessionData.token_type,
-                        expiresAt: sessionData.expires_at
-                    });
-
-                    // Profile creation will be handled by Enterprise Redux middleware
-                    // via enterpriseProfileService.ts when session is established in mobile app
-                    console.log('📱 Profile creation will be handled by Enterprise Redux middleware in mobile app');
-
-                    // Generate mobile deep link for Enterprise Redux workflow
-                    const deepLinkUrl = generateMobileDeepLink(sessionData);
-
-                    // Show success state
-                    showSuccess(deepLinkUrl);
-                    return;
-                }
-
-                // If we get here, no valid tokens found
-                console.log('❌ No valid authentication tokens found');
-                throw new Error('Acceso no autorizado');
-
-            } catch (error) {
-                console.error('💥 Email confirmation handler error:', {
-                    message: error.message,
-                    stack: error.stack,
-                    url: window.location.href
-                });
-                showError(error.message);
-            }
-        }
-
-        /**
-         * NOTE: Profile creation monitoring removed - handled by Enterprise Redux workflow
-         * Profile creation is now handled in the mobile app via:
-         * - authMiddleware.ts
-         * - enterpriseProfileService.ts
-         * - RTK Query caching
-         */
-
-        /**
-         * Token validation for Supabase tokens
-         */
-        function isValidToken(token, tokenType = 'access') {
-            if (!token || typeof token !== 'string') return false;
-
-            // Access tokens are JWTs (3 parts separated by dots)
-            if (tokenType === 'access') {
-                const parts = token.split('.');
-                return parts.length === 3 && parts.every(part => part.length > 0);
-            }
-
-            // Refresh tokens are opaque strings (not JWTs)
-            if (tokenType === 'refresh') {
-                return token.length > 10; // Basic length check for refresh tokens
-            }
-
-            return false;
-        }
-
-        // Generate secure deep link for mobile app with session tokens
-        function generateMobileDeepLink(session) {
-            if (!session?.access_token || !session?.refresh_token) {
-                console.warn('No session tokens available for deep link');
-                return null;
-            }
-
-            // Detect environment and generate appropriate deep link
-            const isProduction = window.location.hostname === 'auth.manito.cl';
-
-            // Use production scheme for real workflow testing
-            let baseUrl = 'manito://auth/verified';
-            console.log('🌐 Using production scheme for real workflow testing - manito:// scheme');
-
-            // Create deep link with tokens (Enterprise Redux workflow)
-            const params = new URLSearchParams({
-                access_token: session.access_token,
-                refresh_token: session.refresh_token,
-                expires_at: session.expires_at?.toString() || '',
-                token_type: session.token_type || 'bearer',
-                // Enterprise Redux workflow flags
-                auth_method: 'email',
-                flow_type: 'pkce',
-                verified: 'true'
-            });
-
-            const finalUrl = `${baseUrl}?${params.toString()}`;
-            console.log('📱 Generated deep link:', finalUrl.substring(0, 100) + '...');
-            return finalUrl;
-        }
-
-        function showSuccess(deepLinkUrl = null) {
-            document.getElementById('loading-state').style.display = 'none';
-            document.getElementById('success-state').style.display = 'block';
-
-            // Show mobile deep link option if available
-            if (deepLinkUrl) {
-                const mobileLinkSection = document.getElementById('mobile-link-section');
-                const openAppBtn = document.getElementById('open-app-btn');
-
-                mobileLinkSection.style.display = 'block';
-
-                // In production, also provide Expo Go option for testing
-                if (window.location.hostname === 'auth.manito.cl') {
-                    // Create both production and Expo Go links
-                    const sessionData = {
-                        access_token: new URLSearchParams(window.location.hash.substring(1) || window.location.search).get('access_token'),
-                        refresh_token: new URLSearchParams(window.location.hash.substring(1) || window.location.search).get('refresh_token'),
-                        expires_at: new URLSearchParams(window.location.hash.substring(1) || window.location.search).get('expires_at'),
-                        token_type: new URLSearchParams(window.location.hash.substring(1) || window.location.search).get('token_type') || 'bearer'
-                    };
-
-                    const expoParams = new URLSearchParams({
-                        access_token: sessionData.access_token,
-                        refresh_token: sessionData.refresh_token,
-                        expires_at: sessionData.expires_at?.toString() || '',
-                        token_type: sessionData.token_type,
-                        auth_method: 'email',
-                        flow_type: 'pkce',
-                        verified: 'true'
-                    });
-
-                    const expoDeepLink = `exp://192.168.254.81:8081/--/auth/verified?${expoParams.toString()}`;
-
-                    // Update button text and add Expo Go option
-                    openAppBtn.textContent = 'Abrir App Manito (Producción)';
-
-                    // Add Expo Go button
-                    const expoBtn = document.createElement('button');
-                    expoBtn.textContent = 'Abrir Expo Go (Testing)';
-                    expoBtn.className = 'close-btn';
-                    expoBtn.style.margin = '10px';
-                    expoBtn.style.background = '#6B7280';
-                    expoBtn.onclick = () => {
-                        console.log('🧪 Opening Expo Go link:', expoDeepLink.substring(0, 100) + '...');
-                        window.location.href = expoDeepLink;
-                        setTimeout(() => closeWindow(), 1000);
-                    };
-
-                    openAppBtn.parentNode.insertBefore(expoBtn, openAppBtn.nextSibling);
-                }
-
-                openAppBtn.onclick = () => {
-                    console.log('📱 Opening production app link:', deepLinkUrl.substring(0, 100) + '...');
-                    window.location.href = deepLinkUrl;
-                    // Fallback: try to close window after attempting to open app
-                    setTimeout(() => {
-                        closeWindow();
-                    }, 1000);
-                };
-            }
-        }
-
-        /**
-         * Enhanced error display with better categorization
-         */
-        function showError(message) {
-            console.log('🚨 Showing error state:', message);
-            document.getElementById('loading-state').style.display = 'none';
-
-            // Categorize error types for better UX
-            const lowerMessage = message.toLowerCase();
-
-            if (lowerMessage.includes('acceso no autorizado') ||
-                lowerMessage.includes('no autorizado') ||
-                lowerMessage.includes('unauthorized')) {
-                document.getElementById('unauthorized-state').style.display = 'block';
-            } else {
-                // Sanitize message before displaying
-                const sanitizedMessage = sanitizeErrorMessage(message);
-                document.getElementById('error-message').textContent = sanitizedMessage;
-                document.getElementById('error-state').style.display = 'block';
-            }
-        }
-
-        /**
-         * Sanitize error messages for display
-         */
-        function sanitizeErrorMessage(message) {
-            if (!message || typeof message !== 'string') {
-                return 'Error desconocido. Intenta nuevamente más tarde.';
-            }
-
-            // Remove potentially dangerous content
-            let sanitized = message
-                .replace(/<[^>]*>/g, '') // Remove HTML tags
-                .replace(/[<>"'&]/g, '') // Remove dangerous characters
-                .substring(0, 300); // Limit length
-
-            // Ensure we have a user-friendly message
-            if (sanitized.length < 5) {
-                sanitized = 'Error en la verificación. Intenta nuevamente.';
-            }
-
-            return sanitized;
-        }
-
-        /**
-         * Enhanced window closing with better mobile support
-         */
-        window.closeWindow = function() {
-            console.log('🔄 Attempting to close window...');
-
-            try {
-                // Try different methods in order of preference
-                if (window.opener) {
-                    console.log('Closing popup window');
-                    window.close();
-                } else if (history.length > 1) {
-                    console.log('Going back in history');
-                    history.back();
-                } else {
-                    console.log('Attempting direct window close');
-                    window.close();
-                }
-            } catch (error) {
-                console.warn('Could not close window:', error.message);
-                // Fallback: just hide the content
-                document.body.innerHTML = '<div style="text-align: center; padding: 50px; font-family: sans-serif;"><h2>✅ Proceso Completado</h2><p>Puedes cerrar esta ventana manualmente.</p></div>';
-            }
-        };
-
-        /**
-         * Initialize the verification process
-         */
-        function initialize() {
-            console.log('🚀 Initializing email verification handler');
-
-            // Add error boundary
-            window.addEventListener('unhandledrejection', (event) => {
-                console.error('🚨 Unhandled promise rejection:', event.reason);
-                showError('Error inesperado. Intenta nuevamente más tarde.');
-                event.preventDefault();
-            });
-
-            window.addEventListener('error', (event) => {
-                console.error('🚨 Unhandled error:', event.error);
-                showError('Error inesperado. Intenta nuevamente más tarde.');
-            });
-
-            // Start the verification process
-            handleEmailConfirmation();
-        }
-
-        // Start when DOM is ready
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', initialize);
-        } else {
-            initialize();
-        }
-    </script>
-</body>
-</html>
+          }
+        </style>
+      `;
+
+      // Insert auto-redirect message at the top
+      const container = document.querySelector('.container') || document.body;
+      container.insertBefore(autoRedirectDiv, container.firstChild);
+
+      // Attempt deep link redirect
+      window.location.href = deepLink;
+
+      // Fallback: Show manual options after 3 seconds if deep link fails
+      setTimeout(() => {
+        console.log('⚠️ Deep link may have failed - showing manual options');
+        autoRedirectDiv.style.display = 'none';
+      }, 3000);
+
+    } else {
+      console.log('⚠️ Missing auth tokens - showing manual options');
+    }
+  }
+
+  // Run auto-redirect when page loads
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', handleMobileAutoRedirect);
+  } else {
+    handleMobileAutoRedirect();
+  }
+})();
+</script>
