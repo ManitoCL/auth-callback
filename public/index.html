@@ -1,723 +1,297 @@
 <!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Confirmación de Email - Manito</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-        }
-
-        .container {
-            background: white;
-            padding: 40px;
-            border-radius: 16px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-            text-align: center;
-            max-width: 500px;
-            width: 100%;
-        }
-
-        .icon {
-            font-size: 60px;
-            margin-bottom: 20px;
-        }
-
-        .success {
-            color: #10B981;
-        }
-
-        .error {
-            color: #EF4444;
-        }
-
-        h1 {
-            color: #1F2937;
-            margin-bottom: 16px;
-            font-size: 28px;
-            font-weight: 700;
-        }
-
-        p {
-            color: #6B7280;
-            line-height: 1.6;
-            margin-bottom: 24px;
-            font-size: 16px;
-        }
-
-        .close-btn {
-            background: #007AFF;
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            border-radius: 8px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-
-        .close-btn:hover {
-            background: #0056CC;
-        }
-
-        .loading {
-            display: inline-block;
-            width: 40px;
-            height: 40px;
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #007AFF;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin-bottom: 20px;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-    </style>
-<!-- MOBILE AUTO-REDIRECT ENHANCEMENT -->    <script>    (function() {      // Enhanced mobile device detection      function isMobileDevice() {        const userAgent = navigator.userAgent || navigator.vendor || window.opera;        const mobileRegex = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i;        const isMobileUA = mobileRegex.test(userAgent);        const isMobileScreen = window.innerWidth <= 768 && window.innerHeight <= 1024;        const isTouchDevice = "ontouchstart" in window || navigator.maxTouchPoints > 0;        return isMobileUA || (isMobileScreen && isTouchDevice);      }      // Auto-redirect mobile browsers to deep link      function handleMobileAutoRedirect() {        if (!isMobileDevice()) {          console.log("🖥️ Desktop browser detected - showing manual options");          return;        }        console.log("📱 Mobile browser detected - attempting auto-redirect to deep link");        // Extract auth parameters from URL        const urlParams = new URLSearchParams(window.location.search);        const authParams = {          access_token: urlParams.get("access_token"),          refresh_token: urlParams.get("refresh_token"),          expires_at: urlParams.get("expires_at") || urlParams.get("expires_in"),          token_type: urlParams.get("token_type") || "bearer",          auth_method: urlParams.get("auth_method") || "email",          flow_type: urlParams.get("flow_type") || "pkce",          verified: "true"        };        // Only auto-redirect if we have valid auth tokens        if (authParams.access_token && authParams.refresh_token) {          const deepLinkParams = new URLSearchParams();          Object.entries(authParams).forEach(([key, value]) => {            if (value) deepLinkParams.set(key, value);          });          const deepLink = `manito://auth/verified?${deepLinkParams.toString()}`;          console.log("🚀 AUTO-REDIRECTING to mobile app:", deepLink);          // Show auto-redirect message          const autoRedirectDiv = document.createElement("div");          autoRedirectDiv.innerHTML = `            <div style="text-align: center; padding: 20px; background: #f0f9ff; border-radius: 8px; margin: 20px; border: 2px solid #0ea5e9;">              <h3 style="color: #0369a1; margin-bottom: 10px;">📱 Redirecting to Manito App...</h3>              <p style="color: #075985; margin-bottom: 15px;">Mobile device detected - opening Manito app automatically</p>              <div style="display: inline-block; width: 20px; height: 20px; border: 3px solid #0ea5e9; border-top: 3px solid transparent; border-radius: 50%; animation: spin 1s linear infinite;"></div>              <p style="color: #0c4a6e; font-size: 14px; margin-top: 15px;">If the app doesn't open, use the buttons below</p>            </div>          `;          // Insert auto-redirect message at the top when DOM is ready          function insertMessage() {            const container = document.querySelector(".container") || document.body;            if (container.firstChild) {              container.insertBefore(autoRedirectDiv, container.firstChild);            } else {              container.appendChild(autoRedirectDiv);            }          }          if (document.readyState === "loading") {            document.addEventListener("DOMContentLoaded", insertMessage);          } else {            insertMessage();          }          // Attempt deep link redirect          window.location.href = deepLink;          // Fallback: Show manual options after 3 seconds if deep link fails          setTimeout(() => {            console.log("⚠️ Deep link may have failed - showing manual options");            if (autoRedirectDiv && autoRedirectDiv.parentNode) {              autoRedirectDiv.style.display = "none";            }          }, 3000);        } else {          console.log("⚠️ Missing auth tokens - showing manual options only");        }      }      // Run auto-redirect when page loads      if (document.readyState === "loading") {        document.addEventListener("DOMContentLoaded", handleMobileAutoRedirect);      } else {        handleMobileAutoRedirect();      }    })();    </script>
-</head>
-<body>
-    <div class="container">
-        <div id="loading-state">
-            <div class="loading"></div>
-            <h1>Verificando tu email...</h1>
-            <p>Por favor espera mientras confirmamos tu cuenta.</p>
-        </div>
-
-        <div id="success-state" style="display: none;">
-            <div class="icon success">✅</div>
-            <h1>¡Email Confirmado!</h1>
-            <p>Tu cuenta ha sido verificada exitosamente. Ya puedes cerrar esta ventana y regresar a la aplicación Manito.</p>
-            <button class="close-btn" onclick="closeWindow()">Cerrar Ventana</button>
-        </div>
-
-        <div id="error-state" style="display: none;">
-            <div class="icon error">❌</div>
-            <h1>Error en la Verificación</h1>
-            <p id="error-message">Hubo un problema al verificar tu email. Por favor intenta nuevamente o contacta soporte.</p>
-            <button class="close-btn" onclick="closeWindow()">Cerrar Ventana</button>
-        </div>
-
-        <div id="unauthorized-state" style="display: none;">
-            <div class="icon error">🔒</div>
-            <h1>Acceso No Autorizado</h1>
-            <p>Esta página solo es accesible desde enlaces de verificación de email enviados por Manito.</p>
-            <p>Si necesitas verificar tu cuenta, revisa tu email o solicita un nuevo enlace de verificación.</p>
-            <button class="close-btn" onclick="closeWindow()">Cerrar Ventana</button>
-        </div>
-    </div>
-
-    <script src="config.js"></script>
-    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
-    <script>
-        // Supabase configuration from external config
-        const supabaseUrl = window.MANITO_CONFIG.supabaseUrl
-        const supabaseKey = window.MANITO_CONFIG.supabaseKey
-
-        // Create Supabase client
-        const supabase = window.supabase.createClient(supabaseUrl, supabaseKey)
-
-        console.log('Supabase client created:', supabase)
-        console.log('Current URL:', window.location.href)
-        console.log('URL params:', window.location.search)
-        console.log('URL hash:', window.location.hash)
-
-        // Global variables to store tokens for deep link (secure in-memory storage)
-        let globalAccessToken = null;
-        let globalRefreshToken = null;
-
-        // Platform detection
-        function detectPlatform() {
-            const userAgent = navigator.userAgent || navigator.vendor || window.opera;
-
-            const isMobile = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent);
-            const isIOS = /iPad|iPhone|iPod/.test(userAgent);
-            const isAndroid = /android/i.test(userAgent);
-            const isDesktop = !isMobile;
-
-            console.log('🔍 Platform detected:', { isMobile, isIOS, isAndroid, isDesktop, userAgent });
-
-            return { isMobile, isIOS, isAndroid, isDesktop };
-        }
-
-        async function handleEmailConfirmation() {
-            console.log('=== Starting Email Confirmation ===')
-            try {
-                // Extract parameters from URL
-                const urlParams = new URLSearchParams(window.location.search)
-                const hashParams = new URLSearchParams(window.location.hash.substring(1))
-
-                console.log('URL params:', Object.fromEntries(urlParams))
-                console.log('Hash params:', Object.fromEntries(hashParams))
-
-                // Check for error first
-                const urlError = urlParams.get('error') || hashParams.get('error')
-                if (urlError) {
-                    throw new Error(urlError)
-                }
-
-                // Check for session code (preferred secure method)
-                const sessionCode = urlParams.get('session_code') || hashParams.get('session_code')
-
-                // Check for verification code from Supabase email
-                const verificationCode = urlParams.get('code') || hashParams.get('code')
-
-                if (verificationCode) {
-                    console.log('🔑 Found Supabase verification code, exchanging for session...')
-
-                    try {
-                        // Use Supabase to exchange the code for a session
-                        const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(verificationCode)
-
-                        if (exchangeError) {
-                            console.error('Code exchange failed:', exchangeError)
-                            throw new Error('Error al verificar el código: ' + exchangeError.message)
-                        }
-
-                        if (!data.session) {
-                            throw new Error('No se pudo obtener la sesión')
-                        }
-
-                        globalAccessToken = data.session.access_token
-                        globalRefreshToken = data.session.refresh_token
-
-                        console.log('✅ Code exchanged successfully:', {
-                            hasAccessToken: !!globalAccessToken,
-                            hasRefreshToken: !!globalRefreshToken,
-                            hasUser: !!data.user,
-                            emailVerified: !!data.user?.email_confirmed_at
-                        })
-
-                    } catch (codeError) {
-                        console.error('Failed to exchange code:', codeError)
-                        throw new Error('Error al verificar tu email: ' + codeError.message)
-                    }
-                } else if (sessionCode) {
-                    console.log('🔒 Found secure session code, retrieving tokens...')
-
-                    try {
-                        const response = await fetch('/api/retrieve-session', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                            },
-                            body: JSON.stringify({
-                                session_code: sessionCode
-                            })
-                        });
-
-                        if (!response.ok) {
-                            throw new Error('Failed to retrieve session from code')
-                        }
-
-                        const sessionData = await response.json()
-                        globalAccessToken = sessionData.access_token
-                        globalRefreshToken = sessionData.refresh_token
-
-                        console.log('✅ Session retrieved from secure code:', {
-                            hasAccessToken: !!globalAccessToken,
-                            hasRefreshToken: !!globalRefreshToken
-                        })
-
-                    } catch (sessionError) {
-                        console.error('Failed to retrieve session from code:', sessionError)
-                        throw new Error('Error al recuperar la sesión. Intenta nuevamente.')
-                    }
-                } else {
-                    // Fallback: Extract direct tokens from URL parameters
-                    globalAccessToken = hashParams.get('access_token') || urlParams.get('access_token')
-                    globalRefreshToken = hashParams.get('refresh_token') || urlParams.get('refresh_token')
-
-                    console.log('📱 Using direct tokens from URL:', {
-                        hasAccessToken: !!globalAccessToken,
-                        hasRefreshToken: !!globalRefreshToken,
-                        accessTokenLength: globalAccessToken?.length,
-                        refreshTokenLength: globalRefreshToken?.length
-                    })
-                }
-
-                const tokenType = hashParams.get('token_type') || urlParams.get('token_type') || 'bearer'
-                const type = hashParams.get('type') || urlParams.get('type') || 'success'
-
-                // Security: Block access without valid tokens
-                if (!globalAccessToken || !globalRefreshToken) {
-                    throw new Error('Acceso no autorizado. Esta página solo es accesible desde enlaces de verificación de email.')
-                }
-
-                // Security: Enhanced token validation with proper refresh token handling
-                function validateAccessToken(token) {
-                    try {
-                        const parts = token.split('.')
-                        if (parts.length !== 3) {
-                            throw new Error('Invalid JWT structure')
-                        }
-
-                        const payload = JSON.parse(atob(parts[1]))
-                        const now = Math.floor(Date.now() / 1000)
-
-                        console.log('Access token validation - aud:', payload.aud)
-
-                        // SECURITY: Environment-based issuer validation (no hardcoding)
-                        const expectedIssuer = `${window.MANITO_CONFIG.supabaseUrl}/auth/v1`
-                        if (payload.iss !== expectedIssuer) {
-                            console.error('Invalid issuer - expected:', expectedIssuer, 'got:', payload.iss)
-                            throw new Error('Invalid token issuer')
-                        }
-
-                        // Verify expiration
-                        if (!payload.exp || payload.exp < now) {
-                            throw new Error('Token expired or missing expiration')
-                        }
-
-                        // Verify this is for authentication
-                        if (payload.aud !== 'authenticated') {
-                            throw new Error('Invalid token audience: ' + payload.aud)
-                        }
-
-                        // Additional security: Check issued-at time is reasonable
-                        if (payload.iat && payload.iat > now) {
-                            throw new Error('Token issued in the future')
-                        }
-
-                        return true
-                    } catch (e) {
-                        throw new Error('Access token validation failed: ' + e.message)
-                    }
-                }
-
-                function validateRefreshToken(token) {
-                    try {
-                        // Supabase refresh tokens are opaque strings, not JWTs
-                        // Basic validation: ensure it's a reasonable format
-                        if (!token || typeof token !== 'string') {
-                            throw new Error('Refresh token must be a string')
-                        }
-
-                        // Supabase refresh tokens are typically 12+ characters of alphanumeric
-                        if (token.length < 8) {
-                            throw new Error('Refresh token too short')
-                        }
-
-                        // Basic format check - should be alphanumeric (Supabase pattern)
-                        if (!/^[a-zA-Z0-9]+$/.test(token)) {
-                            throw new Error('Refresh token invalid format')
-                        }
-
-                        console.log('Refresh token validation passed - length:', token.length)
-                        return true
-                    } catch (e) {
-                        throw new Error('Refresh token validation failed: ' + e.message)
-                    }
-                }
-
-                // SECURITY: Validate both tokens with proper handling
-                try {
-                    validateAccessToken(globalAccessToken)
-                    validateRefreshToken(globalRefreshToken)
-                    console.log('Token validation passed')
-                } catch (validationError) {
-                    console.error('Token validation failed:', validationError.message)
-                    throw new Error('Tokens de autenticación inválidos')
-                }
-
-                // Only set session if we didn't already exchange a code
-                let sessionData;
-                if (!verificationCode) {
-                    console.log('Calling supabase.auth.setSession...')
-                    const { data, error: sessionError } = await supabase.auth.setSession({
-                        access_token: globalAccessToken,
-                        refresh_token: globalRefreshToken
-                    })
-
-                    console.log('Supabase setSession response:', { data, error: sessionError })
-
-                    if (sessionError) {
-                        console.error('Supabase setSession error:', sessionError)
-                        throw sessionError
-                    }
-                    sessionData = data;
-                } else {
-                    // Session was already set by exchangeCodeForSession
-                    console.log('Session already set by code exchange')
-                    const { data: { user } } = await supabase.auth.getUser()
-                    sessionData = { user };
-                }
-
-                console.log('✅ Auth callback: Email confirmation successful:', {
-                    hasUser: !!sessionData.user,
-                    emailConfirmed: !!sessionData.user?.email_confirmed_at,
-                    sessionSet: true
-                })
-
-                // Create user profile in custom users table
-                console.log('🔄 Creating user profile...')
-                try {
-                    // Use the secure function that only works for authenticated users
-                    // After setSession, the user should be authenticated
-                    console.log('📞 Calling create_user_profile_secure...')
-                    const { data: profileData, error: profileError } = await supabase.rpc('create_user_profile_secure')
-
-                    console.log('📊 Profile creation result:', {
-                        success: !profileError,
-                        data: profileData,
-                        error: profileError?.message,
-                        errorCode: profileError?.code
-                    })
-
-                    if (profileError) {
-                        console.error('❌ Profile creation failed:', {
-                            message: profileError.message,
-                            code: profileError.code,
-                            details: profileError.details,
-                            hint: profileError.hint
-                        })
-                        // Check if it's an auth error vs other error
-                        if (profileError.message?.includes('Authentication required') || profileError.message?.includes('Not authorized')) {
-                            console.error('🚨 SECURITY: User not properly authenticated after setSession')
-                        }
-                        // Don't fail the whole flow - user is still authenticated
-                    } else {
-                        console.log('✅ User profile created successfully:', profileData)
-                    }
-                } catch (profileErr) {
-                    console.error('💥 Profile creation exception:', {
-                        message: profileErr.message,
-                        stack: profileErr.stack
-                    })
-                    // Don't fail the whole flow - user is still authenticated
-                }
-
-                // Platform-aware success handling
-                const platform = detectPlatform();
-
-                if (platform.isMobile) {
-                    console.log('📱 Mobile device detected - attempting immediate app redirect');
-                    showSuccess()
-                    // On mobile, try immediate redirect
-                    setTimeout(() => {
-                        tryDeepLinkMobile()
-                    }, 1000)
-                } else {
-                    console.log('🖥️ Desktop device detected - showing mobile instructions');
-                    showDesktopSuccess()
-                }
-
-            } catch (error) {
-                console.error('Email confirmation error:', error)
-                showError(error.message)
-            }
-        }
-
-        function showSuccess() {
-            document.getElementById('loading-state').style.display = 'none'
-            document.getElementById('success-state').style.display = 'block'
-        }
-
-        function showDesktopSuccess() {
-            document.getElementById('loading-state').style.display = 'none'
-            const successDiv = document.getElementById('success-state')
-            successDiv.style.display = 'block'
-
-            // Update content for desktop users
-            const titleElement = successDiv.querySelector('h1')
-            const messageElement = successDiv.querySelector('p')
-            const buttonElement = successDiv.querySelector('button')
-
-            if (titleElement) {
-                titleElement.innerHTML = '✅ Email Verificado'
-            }
-
-            if (messageElement) {
-                messageElement.innerHTML = `
-                    <div style="background: #F0FDF4; padding: 20px; border-radius: 12px; border-left: 4px solid #10B981; margin: 20px 0;">
-                        <div style="color: #10B981; font-size: 18px; font-weight: bold; margin-bottom: 12px;">
-                            📱 Abre Manito en tu dispositivo móvil
-                        </div>
-                        <div style="color: #059669; line-height: 1.5;">
-                            Tu email ha sido verificado exitosamente. La sesión se sincronizará automáticamente cuando abras la aplicación Manito en tu dispositivo móvil.
-                        </div>
-                    </div>
-
-                    <div style="color: #6B7280; font-size: 14px; margin-top: 16px; padding: 12px; background: #F9FAFB; border-radius: 8px;">
-                        💡 <strong>Consejo:</strong> Si ya tienes la app abierta, simplemente regresa a ella para continuar.
-                    </div>
-                `
-            }
-
-            if (buttonElement) {
-                buttonElement.innerHTML = '📱 Entendido'
-                buttonElement.style.background = '#10B981'
-            }
-        }
-
-        function showError(message) {
-            document.getElementById('loading-state').style.display = 'none'
-
-            // Show unauthorized state for access control errors
-            if (message.includes('Acceso no autorizado') || message.includes('no autorizado')) {
-                document.getElementById('unauthorized-state').style.display = 'block'
-            } else {
-                document.getElementById('error-message').textContent = message
-                document.getElementById('error-state').style.display = 'block'
-            }
-        }
-
-        async function tryDeepLinkMobile() {
-            console.log('📱 Attempting mobile app redirect with secure session...');
-
-            // CRITICAL FIX: Use globally stored tokens instead of re-extracting from hash
-            console.log('🔒 Using globally stored tokens for secure session creation:', {
-                hasAccessToken: !!globalAccessToken,
-                hasRefreshToken: !!globalRefreshToken,
-                accessTokenLength: globalAccessToken?.length,
-                refreshTokenLength: globalRefreshToken?.length
-            })
-
-            // ENTERPRISE APPROACH: Direct tokens like Meta/Instagram (no session_code)
-            console.log('🔗 Creating enterprise deep link with direct tokens...');
-
-            const deepLinkParams = new URLSearchParams({
-                access_token: globalAccessToken,
-                refresh_token: globalRefreshToken,
-                expires_at: '', // Will be set by middleware
-                token_type: 'bearer',
-                auth_method: 'email',
-                flow_type: 'pkce',
-                verified: 'true'
-            });
-
-            const appScheme = `manito://auth/verified?${deepLinkParams.toString()}`;
-
-            console.log('🔗 Created enterprise deep link:', {
-                hasTokens: !!(globalAccessToken && globalRefreshToken),
-                deepLinkLength: appScheme.length,
-                scheme: 'manito://auth/verified'
-            });
-
-            console.log('📱 Mobile deep link:', {
-                hasAccessToken: !!globalAccessToken,
-                hasRefreshToken: !!globalRefreshToken,
-                tokenLength: globalAccessToken?.length,
-                deepLinkLength: appScheme.length
-            })
-
-            try {
-                // Method 1: Direct redirect (most effective on mobile)
-                console.log('📱 Attempting direct redirect to app...')
-                window.location.href = appScheme
-
-                // Method 2: Fallback with immediate retry for iOS/Android compatibility
-                setTimeout(() => {
-                    const link = document.createElement('a')
-                    link.href = appScheme
-                    link.style.display = 'none'
-                    document.body.appendChild(link)
-                    link.click()
-                    document.body.removeChild(link)
-                    console.log('📱 Mobile fallback deep link attempted')
-                }, 500)
-
-                // Method 3: Additional iOS-specific fallback using iframe
-                const platform = detectPlatform()
-                if (platform.isIOS) {
-                    setTimeout(() => {
-                        const iframe = document.createElement('iframe')
-                        iframe.src = appScheme
-                        iframe.style.display = 'none'
-                        document.body.appendChild(iframe)
-                        setTimeout(() => document.body.removeChild(iframe), 1000)
-                        console.log('📱 iOS iframe deep link attempted')
-                    }, 1000)
-                }
-
-                // Method 4: Update UI with professional fallback option
-                setTimeout(() => {
-                    const successDiv = document.getElementById('success-state')
-                    if (successDiv && successDiv.style.display !== 'none') {
-                        const messageElement = successDiv.querySelector('p')
-                        if (messageElement) {
-                            messageElement.innerHTML = `
-                                <div style="color: #10B981; font-size: 18px; font-weight: bold; margin-bottom: 16px;">
-                                    ✅ ¡Email Verificado!
-                                </div>
-                                <div style="background: #F0FDF4; padding: 16px; border-radius: 8px; border-left: 4px solid #10B981; margin: 16px 0;">
-                                    <strong>📱 Abriendo Manito...</strong><br>
-                                    <span style="color: #059669;">Si la app no se abre automáticamente en 3 segundos, usa el botón de abajo.</span>
-                                </div>
-                            `
-                        }
-
-                        const buttonElement = successDiv.querySelector('button')
-                        if (buttonElement) {
-                            buttonElement.innerHTML = '📱 Abrir Manito'
-                            buttonElement.style.background = '#10B981'
-                            buttonElement.onclick = function() {
-                                window.location.href = appScheme
-                            }
-                        }
-                    }
-                }, 2000)
-
-            } catch (error) {
-                console.error('❌ Mobile deep link failed:', error)
-                // Show error-specific message
-                const successDiv = document.getElementById('success-state')
-                if (successDiv) {
-                    const messageElement = successDiv.querySelector('p')
-                    if (messageElement) {
-                        messageElement.innerHTML = `
-                            <div style="color: #10B981; font-size: 18px; font-weight: bold; margin-bottom: 16px;">
-                                ✅ ¡Email Verificado!
-                            </div>
-                            <div style="background: #FEF3C7; padding: 16px; border-radius: 8px; border-left: 4px solid #F59E0B; margin: 16px 0;">
-                                <strong>📱 Abre Manito manualmente</strong><br>
-                                <span style="color: #92400E;">Tu cuenta está verificada. Abre la app Manito para continuar.</span>
-                            </div>
-                        `
-                    }
-                }
-            }
-
-            // SECURITY: Clear tokens immediately after successful deep link attempts
-            setTimeout(() => {
-                globalAccessToken = null
-                globalRefreshToken = null
-                console.log('🔒 Tokens cleared from memory for security')
-            }, 3000) // Reduced timeout for better security
-        }
-
-        async function tryDeepLink() {
-            console.log('🔗 Attempting to redirect to mobile app with secure session...')
-
-            // CRITICAL FIX: Use globally stored tokens instead of re-extracting from hash
-            // Hash parameters may have been consumed/cleared by setSession()
-            console.log('🔒 Using globally stored tokens for secure session creation:', {
-                hasAccessToken: !!globalAccessToken,
-                hasRefreshToken: !!globalRefreshToken,
-                accessTokenLength: globalAccessToken?.length,
-                refreshTokenLength: globalRefreshToken?.length
-            })
-
-            // ENTERPRISE APPROACH: Direct tokens like Meta/Instagram (no session_code)
-            console.log('🔗 Creating enterprise deep link with direct tokens...');
-
-            const deepLinkParams = new URLSearchParams({
-                access_token: globalAccessToken,
-                refresh_token: globalRefreshToken,
-                expires_at: '', // Will be set by middleware
-                token_type: 'bearer',
-                auth_method: 'email',
-                flow_type: 'pkce',
-                verified: 'true'
-            });
-
-            const appScheme = `manito://auth/verified?${deepLinkParams.toString()}`;
-
-            console.log('🔗 Created enterprise deep link:', {
-                hasTokens: !!(globalAccessToken && globalRefreshToken),
-                deepLinkLength: appScheme.length,
-                scheme: 'manito://auth/verified'
-            });
-
-            console.log('🔗 Deep link with tokens:', {
-                hasAccessToken: !!globalAccessToken,
-                hasRefreshToken: !!globalRefreshToken,
-                tokenLength: globalAccessToken?.length,
-                deepLinkLength: appScheme.length
-            })
-
-            try {
-                // Method 1: Try window.location (most reliable)
-                window.location.href = appScheme
-
-                // Method 2: Fallback to hidden link approach
-                setTimeout(() => {
-                    const link = document.createElement('a')
-                    link.href = appScheme
-                    link.style.display = 'none'
-                    document.body.appendChild(link)
-                    link.click()
-                    document.body.removeChild(link)
-                    console.log('🔗 Deep link with tokens attempted via hidden link')
-                }, 500)
-
-            } catch (error) {
-                console.error('❌ Deep link failed:', error)
-            }
-
-            // SECURITY: Clear tokens from memory after use (best practice)
-            setTimeout(() => {
-                globalAccessToken = null
-                globalRefreshToken = null
-                console.log('🔒 Tokens cleared from memory for security')
-            }, 3000) // Reduced timeout for better security
-
-            // Update success message with clear manual instructions
-            setTimeout(() => {
-                const successDiv = document.getElementById('success-state')
-                if (successDiv && successDiv.style.display !== 'none') {
-                    const titleElement = successDiv.querySelector('h1')
-                    const messageElement = successDiv.querySelector('p')
-                    const buttonElement = successDiv.querySelector('button')
-
-                    if (titleElement) {
-                        titleElement.innerHTML = '¡Email Verificado Exitosamente! 🎉'
-                    }
-
-                    if (messageElement) {
-                        messageElement.innerHTML = `
-                            <strong style="color: #10B981; font-size: 18px;">✅ Tu cuenta está lista</strong><br><br>
-
-                            <div style="background: #F0FDF4; padding: 16px; border-radius: 8px; border-left: 4px solid #10B981; margin: 16px 0;">
-                                <strong>📱 Regresa a la aplicación Manito</strong><br>
-                                <span style="color: #059669;">Tu sesión se sincronizará automáticamente cuando abras la app.</span>
-                            </div>
-
-                            <div style="color: #6B7280; font-size: 14px; margin-top: 16px;">
-                                💡 <strong>Consejo:</strong> Si ya tienes la app abierta, simplemente toca la pantalla para refrescar.
-                            </div>
-                        `
-                    }
-
-                    if (buttonElement) {
-                        buttonElement.innerHTML = '📱 Entendido - Volver a Manito'
-                        buttonElement.style.background = '#10B981'
-                        buttonElement.style.fontSize = '16px'
-                        buttonElement.style.padding = '14px 28px'
-                    }
-                }
-            }, 1000)
-        }
-
-        // Make closeWindow globally available
-        window.closeWindow = function() {
-            if (window.opener) {
-                window.close()
-            } else {
-                // Try to go back or close
-                history.back()
-                setTimeout(() => window.close(), 100)
-            }
-        }
-
-        // Start the process
-        handleEmailConfirmation()
-    </script>
-</body>
-</html>
+  <html lang="es">
+  <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Email Verificado - Manito</title>
+      <style>
+          * {
+              margin: 0;
+              padding: 0;
+              box-sizing: border-box;
+          }
+
+          body {
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+              background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+              min-height: 100vh;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              padding: 20px;
+          }
+
+          .container {
+              background: white;
+              padding: 40px;
+              border-radius: 16px;
+              box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+              text-align: center;
+              max-width: 500px;
+              width: 100%;
+          }
+
+          .icon {
+              font-size: 60px;
+              margin-bottom: 20px;
+          }
+
+          .success { color: #10B981; }
+          .error { color: #EF4444; }
+
+          h1 {
+              color: #1F2937;
+              margin-bottom: 16px;
+              font-size: 28px;
+              font-weight: 700;
+          }
+
+          p {
+              color: #6B7280;
+              line-height: 1.6;
+              margin-bottom: 24px;
+              font-size: 16px;
+          }
+
+          .mobile-redirect {
+              background: #EEF2FF;
+              border: 2px solid #667eea;
+              padding: 24px;
+              border-radius: 12px;
+              margin: 24px 0;
+          }
+
+          .mobile-redirect h3 {
+              color: #374151;
+              margin-bottom: 12px;
+              font-size: 18px;
+          }
+
+          .mobile-redirect p {
+              color: #4B5563;
+              margin-bottom: 16px;
+              font-size: 14px;
+          }
+
+          .spinner {
+              display: inline-block;
+              width: 20px;
+              height: 20px;
+              border: 3px solid #667eea;
+              border-top: 3px solid transparent;
+              border-radius: 50%;
+              animation: spin 1s linear infinite;
+          }
+
+          @keyframes spin {
+              0% { transform: rotate(0deg); }
+              100% { transform: rotate(360deg); }
+          }
+
+          .desktop-instructions {
+              background: #F0FDF4;
+              border-left: 4px solid #10B981;
+              padding: 20px;
+              border-radius: 0 8px 8px 0;
+              margin: 24px 0;
+          }
+
+          .desktop-instructions h3 {
+              color: #10B981;
+              margin-bottom: 12px;
+              font-size: 18px;
+          }
+
+          .close-btn {
+              background: #667eea;
+              color: white;
+              border: none;
+              padding: 12px 24px;
+              border-radius: 8px;
+              font-size: 16px;
+              font-weight: 600;
+              cursor: pointer;
+              transition: background 0.2s;
+          }
+
+          .close-btn:hover {
+              background: #5b6ad6;
+          }
+      </style>
+  </head>
+  <body>
+      <div class="container">
+          <div id="success-state">
+              <div class="icon success">✅</div>
+              <h1>¡Email Verificado!</h1>
+              <p>Tu cuenta ha sido confirmada exitosamente.</p>
+
+              <!-- Mobile redirect notification -->
+              <div id="mobile-redirect" class="mobile-redirect" style="display: none;">
+                  <h3>📱 Abriendo Manito...</h3>
+                  <p>Detectamos que estás en un dispositivo móvil. Te estamos redirigiendo a la app automáticamente.</p>
+                  <div class="spinner"></div>
+                  <p style="font-size: 12px; margin-top: 16px;">Si la app no se abre, búscala en tu dispositivo</p>
+              </div>
+
+              <!-- Desktop instructions -->
+              <div id="desktop-instructions" class="desktop-instructions" style="display: none;">
+                  <h3>📱 Abre Manito en tu dispositivo móvil</h3>
+                  <p>Tu email ha sido verificado. Abre la aplicación Manito en tu dispositivo móvil para continuar. La sesión
+  se sincronizará automáticamente.</p>
+              </div>
+
+              <button class="close-btn" onclick="closeWindow()">Entendido</button>
+          </div>
+
+          <div id="error-state" style="display: none;">
+              <div class="icon error">❌</div>
+              <h1>Error en la Verificación</h1>
+              <p id="error-message">Hubo un problema al verificar tu email. Por favor intenta nuevamente.</p>
+              <button class="close-btn" onclick="closeWindow()">Cerrar</button>
+          </div>
+      </div>
+
+      <script>
+          // Phase 1: Simplified verification handler
+          (function() {
+              console.log('🚀 Phase 1 Email Verification - Web Frontend');
+
+              // Platform detection
+              function isMobileDevice() {
+                  const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+                  const mobileRegex = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i;
+                  const isMobileUA = mobileRegex.test(userAgent);
+                  const isMobileScreen = window.innerWidth <= 768 && window.innerHeight <= 1024;
+                  const isTouchDevice = "ontouchstart" in window || navigator.maxTouchPoints > 0;
+                  return isMobileUA || (isMobileScreen && isTouchDevice);
+              }
+
+              // Extract tokens from URL params (Phase 1 approach)
+              function extractTokens() {
+                  const urlParams = new URLSearchParams(window.location.search);
+                  return {
+                      access_token: urlParams.get('access_token'),
+                      refresh_token: urlParams.get('refresh_token'),
+                      expires_at: urlParams.get('expires_at'),
+                      token_type: urlParams.get('token_type') || 'bearer',
+                      verified: urlParams.get('verified') || 'true',
+                      flow: urlParams.get('flow') || 'phase1_simplified'
+                  };
+              }
+
+              // Mobile redirect to app with tokens
+              function redirectToMobileApp(tokens) {
+                  if (!tokens.access_token || !tokens.refresh_token) {
+                      console.error('❌ Missing tokens for mobile redirect');
+                      showError('Tokens de verificación inválidos');
+                      return;
+                  }
+
+                  const deepLinkParams = new URLSearchParams();
+                  Object.entries(tokens).forEach(([key, value]) => {
+                      if (value) deepLinkParams.set(key, value);
+                  });
+
+                  const deepLink = `manito://auth/verified?${deepLinkParams.toString()}`;
+                  console.log('📱 Phase 1 Mobile Deep Link:', {
+                      hasTokens: !!(tokens.access_token && tokens.refresh_token),
+                      deepLinkLength: deepLink.length
+                  });
+
+                  // Show mobile redirect UI
+                  document.getElementById('mobile-redirect').style.display = 'block';
+
+                  // Attempt redirect
+                  window.location.href = deepLink;
+
+                  // Fallback for iOS
+                  setTimeout(() => {
+                      const link = document.createElement('a');
+                      link.href = deepLink;
+                      link.click();
+                  }, 500);
+
+                  // Hide spinner after attempt
+                  setTimeout(() => {
+                      const spinner = document.querySelector('.spinner');
+                      if (spinner) {
+                          spinner.style.display = 'none';
+                      }
+                  }, 3000);
+              }
+
+              // Show desktop instructions
+              function showDesktopInstructions() {
+                  document.getElementById('desktop-instructions').style.display = 'block';
+              }
+
+              // Show error state
+              function showError(message) {
+                  document.getElementById('success-state').style.display = 'none';
+                  document.getElementById('error-state').style.display = 'block';
+                  document.getElementById('error-message').textContent = message;
+              }
+
+              // Main verification handler
+              function handleVerification() {
+                  try {
+                      const tokens = extractTokens();
+
+                      // Check for error parameter
+                      const urlParams = new URLSearchParams(window.location.search);
+                      const error = urlParams.get('error');
+                      if (error) {
+                          showError('Error en la verificación: ' + error);
+                          return;
+                      }
+
+                      // Validate required tokens
+                      if (!tokens.access_token || !tokens.refresh_token) {
+                          showError('Esta página solo es accesible desde enlaces de verificación de email válidos.');
+                          return;
+                      }
+
+                      console.log('✅ Phase 1 Tokens received:', {
+                          hasAccessToken: !!tokens.access_token,
+                          hasRefreshToken: !!tokens.refresh_token,
+                          flow: tokens.flow,
+                          verified: tokens.verified
+                      });
+
+                      // Platform-specific handling
+                      if (isMobileDevice()) {
+                          console.log('📱 Mobile device detected - redirecting to app');
+                          redirectToMobileApp(tokens);
+                      } else {
+                          console.log('🖥️ Desktop device detected - showing instructions');
+                          showDesktopInstructions();
+                      }
+
+                  } catch (error) {
+                      console.error('❌ Phase 1 Verification Error:', error);
+                      showError('Error inesperado al procesar la verificación');
+                  }
+              }
+
+              // Close window function
+              window.closeWindow = function() {
+                  try {
+                      window.close();
+                  } catch (e) {
+                      // Fallback: redirect to main site
+                      window.location.href = 'https://manito.cl';
+                  }
+              };
+
+              // Initialize when DOM is ready
+              if (document.readyState === 'loading') {
+                  document.addEventListener('DOMContentLoaded', handleVerification);
+              } else {
+                  handleVerification();
+              }
+
+          })();
+      </script>
+  </body>
+  </html>
