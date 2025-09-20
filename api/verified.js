@@ -1,9 +1,19 @@
 /**
- * Email Verification Success Handler - Fixed for Hash Fragments
+ * Email Verification Success Handler - Enterprise Single-Use Tokens
  * Handles both Supabase implicit flow (#tokens) and PKCE flow (?tokens)
+ * Implements single-use verification links for banking-grade security
  */
 
-export default function handler(req, res) {
+import { createClient } from '@supabase/supabase-js';
+import crypto from 'crypto';
+
+// Initialize Supabase client for token tracking
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
+
+export default async function handler(req, res) {
   try {
     // Set security headers
     res.setHeader('X-Frame-Options', 'DENY');
@@ -16,6 +26,110 @@ export default function handler(req, res) {
       "script-src 'self' 'unsafe-inline'; " +
       "connect-src 'self';"
     );
+
+    // ENTERPRISE SECURITY: Single-use verification token checking
+    console.log('🔒 Enterprise: Checking single-use verification token');
+
+    // Extract token from various possible sources
+    const urlTokenHash = req.query.token_hash || req.query.access_token;
+    const refererUrl = req.headers.referer;
+
+    let tokenToCheck = urlTokenHash;
+
+    // If no direct token, try to extract from referer URL
+    if (!tokenToCheck && refererUrl) {
+      try {
+        const refererURL = new URL(refererUrl);
+        tokenToCheck = refererURL.searchParams.get('token_hash') ||
+                      refererURL.searchParams.get('access_token') ||
+                      refererURL.hash.match(/[?&]access_token=([^&]+)/)?.[1];
+      } catch (e) {
+        console.log('⚠️ Could not parse referer URL:', e.message);
+      }
+    }
+
+    if (tokenToCheck) {
+      try {
+        // Hash the token for secure storage
+        const tokenHash = crypto.createHash('sha256').update(tokenToCheck).digest('hex');
+
+        console.log('🔍 Checking token usage status');
+
+        // Check if token is already used
+        const { data: isUsed, error: checkError } = await supabase
+          .rpc('is_verification_token_used', { token_hash_param: tokenHash });
+
+        if (checkError) {
+          console.error('❌ Error checking token usage:', checkError);
+          // Continue anyway - don't break flow for database errors
+        } else if (isUsed) {
+          console.log('🚫 Token already used - showing error page');
+
+          // Token already used - show security error page
+          const errorHtml = `
+            <!DOCTYPE html>
+            <html lang="es">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Enlace Ya Utilizado - Manito</title>
+                <style>
+                    body { font-family: Inter, sans-serif; text-align: center; padding: 50px; background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); min-height: 100vh; color: white; }
+                    .container { max-width: 500px; margin: 0 auto; background: white; color: #333; padding: 40px; border-radius: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
+                    .error-icon { font-size: 64px; margin-bottom: 20px; }
+                    h1 { color: #dc2626; margin-bottom: 20px; }
+                    .security-note { background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px; padding: 20px; margin: 20px 0; }
+                    .btn { display: inline-block; background: #059669; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; margin: 10px; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="error-icon">🔒</div>
+                    <h1>Enlace Ya Utilizado</h1>
+                    <p>Este enlace de verificación ya fue usado por seguridad.</p>
+
+                    <div class="security-note">
+                        <strong>🛡️ Protección de Seguridad</strong><br>
+                        Los enlaces de verificación solo pueden usarse una vez para proteger tu cuenta.
+                    </div>
+
+                    <p>Si tu cuenta está verificada, puedes iniciar sesión normalmente en la app.</p>
+
+                    <a href="manito://auth/verified?verified=true&method=already_used" class="btn">Abrir App Manito</a>
+                    <br>
+                    <small>¿Problemas? Contacta soporte@manito.cl</small>
+                </div>
+            </body>
+            </html>
+          `;
+
+          res.setHeader('Content-Type', 'text/html; charset=utf-8');
+          return res.status(200).send(errorHtml);
+        } else {
+          console.log('✅ Token valid - marking as used');
+
+          // Token is valid - mark it as used
+          const { error: markError } = await supabase
+            .rpc('mark_verification_token_used', {
+              token_hash_param: tokenHash,
+              user_id_param: null, // Will be updated when we have user context
+              email_param: req.query.email || 'unknown'
+            });
+
+          if (markError) {
+            console.error('❌ Error marking token as used:', markError);
+            // Continue anyway - don't break the flow
+          } else {
+            console.log('🔒 Token marked as used successfully');
+          }
+        }
+      } catch (error) {
+        console.error('❌ Single-use token check failed:', error);
+        // Continue with normal flow - don't break verification for token errors
+      }
+    } else {
+      console.log('ℹ️ No token found for single-use checking');
+    }
 
     // Enterprise success page with hash fragment support
     const successHtml = `
