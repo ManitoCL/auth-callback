@@ -30,34 +30,67 @@ module.exports = async function handler(req, res) {
     // ENTERPRISE SECURITY: Single-use verification token checking
     console.log('🔒 Enterprise: Checking single-use verification token');
 
-    // Extract token from various possible sources
-    const urlTokenHash = req.query.token_hash || req.query.access_token;
+    // ENHANCED DEBUG: Log all possible token sources
+    console.log('🐛 Debug - Request details:', {
+      query: req.query,
+      headers: {
+        referer: req.headers.referer,
+        'user-agent': req.headers['user-agent']
+      },
+      url: req.url
+    });
+
+    // Extract token from Supabase verification URL parameters
+    const urlTokenHash = req.query.token_hash;
+    const verificationType = req.query.type;
     const refererUrl = req.headers.referer;
 
     let tokenToCheck = urlTokenHash;
+
+    console.log('🐛 Debug - Token extraction:', {
+      urlTokenHash,
+      verificationType,
+      refererUrl,
+      tokenToCheck
+    });
 
     // If no direct token, try to extract from referer URL
     if (!tokenToCheck && refererUrl) {
       try {
         const refererURL = new URL(refererUrl);
-        tokenToCheck = refererURL.searchParams.get('token_hash') ||
-                      refererURL.searchParams.get('access_token') ||
-                      refererURL.hash.match(/[?&]access_token=([^&]+)/)?.[1];
+        const fromSearchParams = refererURL.searchParams.get('token_hash');
+        const fromHash = refererURL.hash.match(/[?&]token_hash=([^&]+)/)?.[1];
+
+        tokenToCheck = fromSearchParams || fromHash;
+
+        console.log('🐛 Debug - Referer extraction:', {
+          refererURL: refererURL.toString(),
+          fromSearchParams,
+          fromHash,
+          finalToken: tokenToCheck
+        });
       } catch (e) {
         console.log('⚠️ Could not parse referer URL:', e.message);
       }
     }
 
-    if (tokenToCheck) {
+    if (tokenToCheck && (verificationType === 'email' || verificationType === 'signup')) {
       try {
         // Hash the token for secure storage
         const tokenHash = crypto.createHash('sha256').update(tokenToCheck).digest('hex');
 
         console.log('🔍 Checking token usage status');
+        console.log('🐛 Debug - Token hash to check:', tokenHash);
 
         // Check if token is already used
         const { data: isUsed, error: checkError } = await supabase
           .rpc('is_verification_token_used', { token_hash_param: tokenHash });
+
+        console.log('🐛 Debug - RPC check result:', {
+          isUsed,
+          checkError,
+          rpcFunctionCalled: 'is_verification_token_used'
+        });
 
         if (checkError) {
           console.error('❌ Error checking token usage:', checkError);
@@ -109,12 +142,21 @@ module.exports = async function handler(req, res) {
           console.log('✅ Token valid - marking as used');
 
           // Token is valid - mark it as used
+          const markTokenData = {
+            token_hash_param: tokenHash,
+            user_id_param: null, // Will be updated when we have user context
+            email_param: req.query.email || 'unknown'
+          };
+
+          console.log('🐛 Debug - Marking token with data:', markTokenData);
+
           const { error: markError } = await supabase
-            .rpc('mark_verification_token_used', {
-              token_hash_param: tokenHash,
-              user_id_param: null, // Will be updated when we have user context
-              email_param: req.query.email || 'unknown'
-            });
+            .rpc('mark_verification_token_used', markTokenData);
+
+          console.log('🐛 Debug - RPC mark result:', {
+            markError,
+            rpcFunctionCalled: 'mark_verification_token_used'
+          });
 
           if (markError) {
             console.error('❌ Error marking token as used:', markError);
@@ -128,7 +170,11 @@ module.exports = async function handler(req, res) {
         // Continue with normal flow - don't break verification for token errors
       }
     } else {
-      console.log('ℹ️ No token found for single-use checking');
+      console.log('ℹ️ No valid token found for single-use checking', {
+        hasToken: !!tokenToCheck,
+        verificationType,
+        validType: verificationType === 'email' || verificationType === 'signup'
+      });
     }
 
     // Enterprise success page with hash fragment support
