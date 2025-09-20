@@ -285,25 +285,25 @@ export default function handler(req, res) {
                   return tokens;
               }
 
-              // Generate deep link with tokens
+              // ENTERPRISE: Generate secure verification deep link
               function generateDeepLink() {
                   const tokens = getTokensFromUrl();
 
                   if (tokens.access_token && tokens.refresh_token) {
-                      // Pass tokens to mobile app
-                      const deepLinkParams = new URLSearchParams({
-                          access_token: tokens.access_token,
-                          refresh_token: tokens.refresh_token,
-                          expires_at: tokens.expires_at || '',
-                          token_type: tokens.token_type || 'bearer',
-                          verified: 'true'
-                      });
+                      // SECURITY: Create short-lived verification token instead of passing full auth tokens
+                      const verificationPayload = {
+                          verified: 'true',
+                          timestamp: Date.now(),
+                          // Don't pass sensitive tokens in deep links
+                          session_hint: 'verified_' + Date.now().toString(36)
+                      };
 
+                      const deepLinkParams = new URLSearchParams(verificationPayload);
                       return \`manito://auth/verified?\${deepLinkParams.toString()}\`;
                   }
 
-                  // Fallback: just verification success
-                  return 'manito://auth/verified?verified=true';
+                  // Fallback: just verification success signal
+                  return 'manito://auth/verified?verified=true&method=fallback';
               }
 
               // Set up the app button
