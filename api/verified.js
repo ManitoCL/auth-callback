@@ -2,6 +2,7 @@
  * Email Verification Success Handler - Enterprise Single-Use Tokens
  * Handles both Supabase implicit flow (#tokens) and PKCE flow (?tokens)
  * Implements single-use verification links for banking-grade security
+ * FIXED: Email extraction and token tracking
  */
 
 const { createClient } = require('@supabase/supabase-js');
@@ -30,47 +31,106 @@ module.exports = async function handler(req, res) {
     // ENTERPRISE SECURITY: Single-use verification token checking
     console.log('🔒 Enterprise: Checking single-use verification token');
 
-    // ENHANCED DEBUG: Log all possible token sources
-    console.log('🐛 Debug - Request details:', {
+    // ENHANCED DEBUG: Log all possible token sources including FULL URL
+    console.log('🐛 Debug - Complete request details:', {
       query: req.query,
+      url: req.url,
+      fullUrl: req.url,
       headers: {
         referer: req.headers.referer,
         'user-agent': req.headers['user-agent']
-      },
-      url: req.url
+      }
     });
 
-    // Extract token from Supabase verification URL parameters
+    // FIXED: Extract ALL possible Supabase verification parameters
     const urlTokenHash = req.query.token_hash;
     const verificationType = req.query.type;
+    const errorParam = req.query.error;
+    const errorDescription = req.query.error_description;
+    const accessToken = req.query.access_token;
+    const refreshToken = req.query.refresh_token;
+    const userEmail = req.query.email; // Sometimes Supabase includes email
     const refererUrl = req.headers.referer;
 
     let tokenToCheck = urlTokenHash;
+    let extractedEmail = userEmail;
 
-    console.log('🐛 Debug - Token extraction:', {
+    console.log('🐛 Debug - Enhanced token extraction:', {
       urlTokenHash,
       verificationType,
+      errorParam,
+      errorDescription,
+      accessToken: accessToken ? 'present' : 'missing',
+      refreshToken: refreshToken ? 'present' : 'missing',
+      userEmail,
       refererUrl,
       tokenToCheck
     });
 
-    // If no direct token, try to extract from referer URL
+    // FIXED: Extract email from access token if available
+    if (accessToken && !extractedEmail) {
+      try {
+        // Decode JWT to get user email (without verification - just for email extraction)
+        const payload = JSON.parse(Buffer.from(accessToken.split('.')[1], 'base64').toString());
+        extractedEmail = payload.email;
+        console.log('🐛 Debug - Email extracted from access token:', extractedEmail);
+      } catch (e) {
+        console.log('⚠️ Could not decode access token for email:', e.message);
+      }
+    }
+
+    // FIXED: More comprehensive token extraction from various sources
     if (!tokenToCheck && refererUrl) {
       try {
         const refererURL = new URL(refererUrl);
-        const fromSearchParams = refererURL.searchParams.get('token_hash');
-        const fromHash = refererURL.hash.match(/[?&]token_hash=([^&]+)/)?.[1];
+
+        // Try multiple parameter patterns Supabase might use
+        const fromSearchParams = refererURL.searchParams.get('token_hash') ||
+                                  refererURL.searchParams.get('token') ||
+                                  refererURL.searchParams.get('confirmation_token');
+
+        const fromHash = refererURL.hash.match(/[?&]token_hash=([^&]+)/)?.[1] ||
+                         refererURL.hash.match(/[?&]token=([^&]+)/)?.[1] ||
+                         refererURL.hash.match(/[?&]confirmation_token=([^&]+)/)?.[1];
 
         tokenToCheck = fromSearchParams || fromHash;
 
-        console.log('🐛 Debug - Referer extraction:', {
+        // Also try to extract email from referer
+        if (!extractedEmail) {
+          extractedEmail = refererURL.searchParams.get('email') ||
+                          refererURL.hash.match(/[?&]email=([^&]+)/)?.[1];
+        }
+
+        console.log('🐛 Debug - Enhanced referer extraction:', {
           refererURL: refererURL.toString(),
           fromSearchParams,
           fromHash,
-          finalToken: tokenToCheck
+          finalToken: tokenToCheck,
+          extractedEmailFromReferer: extractedEmail
         });
       } catch (e) {
         console.log('⚠️ Could not parse referer URL:', e.message);
+      }
+    }
+
+    // FIXED: If still no email, try to get it from the verification context
+    if (!extractedEmail && (accessToken || refreshToken)) {
+      try {
+        // Get user from Supabase using the tokens
+        const tempClient = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
+        if (accessToken && refreshToken) {
+          const { data: { user }, error } = await tempClient.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken
+          });
+
+          if (user && !error) {
+            extractedEmail = user.email;
+            console.log('🐛 Debug - Email extracted from user session:', extractedEmail);
+          }
+        }
+      } catch (e) {
+        console.log('⚠️ Could not extract email from session:', e.message);
       }
     }
 
@@ -128,7 +188,7 @@ module.exports = async function handler(req, res) {
 
                     <p>Si tu cuenta está verificada, puedes iniciar sesión normalmente en la app.</p>
 
-                    <a href="manito://auth/verified?verified=true&method=already_used" class="btn">Abrir App Manito</a>
+                    <a href="manito://auth/login?email=${encodeURIComponent(extractedEmail || '')}" class="btn">Abrir App Manito</a>
                     <br>
                     <small>¿Problemas? Contacta soporte@manito.cl</small>
                 </div>
@@ -145,7 +205,7 @@ module.exports = async function handler(req, res) {
           const markTokenData = {
             token_hash_param: tokenHash,
             user_id_param: null, // Will be updated when we have user context
-            email_param: req.query.email || 'unknown'
+            email_param: extractedEmail || 'unknown'
           };
 
           console.log('🐛 Debug - Marking token with data:', markTokenData);
@@ -177,7 +237,7 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    // Enterprise success page with hash fragment support
+    // FIXED: Enhanced success page with proper email extraction
     const successHtml = `
       <!DOCTYPE html>
       <html lang="es">
@@ -421,7 +481,7 @@ module.exports = async function handler(req, res) {
           </div>
 
           <script>
-              // Handle both hash fragments (#) and query parameters (?)
+              // FIXED: Enhanced token extraction with multiple sources
               function getTokensFromUrl() {
                   const tokens = {};
 
@@ -445,25 +505,74 @@ module.exports = async function handler(req, res) {
                   return tokens;
               }
 
-              // ENTERPRISE: Generate secure verification deep link
+              // FIXED: Extract user email from multiple sources
+              function extractUserEmail() {
+                  const tokens = getTokensFromUrl();
+
+                  // Server-side extracted email (passed via template)
+                  const serverEmail = '${extractedEmail || ''}';
+                  if (serverEmail) {
+                      return serverEmail;
+                  }
+
+                  // Try to get from URL parameters
+                  if (tokens.email) {
+                      return tokens.email;
+                  }
+
+                  // Try to decode from access token
+                  if (tokens.access_token) {
+                      try {
+                          const payload = JSON.parse(atob(tokens.access_token.split('.')[1]));
+                          return payload.email;
+                      } catch (e) {
+                          console.log('Could not decode access token');
+                      }
+                  }
+
+                  return null;
+              }
+
+              // FIXED: Generate deep link with email pre-population
               function generateDeepLink() {
                   const tokens = getTokensFromUrl();
+                  const userEmail = extractUserEmail();
+
+                  console.log('🐛 Debug - Generating deep link with:', {
+                      tokens,
+                      userEmail,
+                      hasAccessToken: !!tokens.access_token,
+                      hasRefreshToken: !!tokens.refresh_token
+                  });
 
                   if (tokens.access_token && tokens.refresh_token) {
                       // SECURITY: Create short-lived verification token instead of passing full auth tokens
                       const verificationPayload = {
                           verified: 'true',
                           timestamp: Date.now(),
-                          // Don't pass sensitive tokens in deep links
                           session_hint: 'verified_' + Date.now().toString(36)
                       };
 
+                      // FIXED: Add email for login pre-population
+                      if (userEmail) {
+                          verificationPayload.email = userEmail;
+                      }
+
                       const deepLinkParams = new URLSearchParams(verificationPayload);
-                      return \`manito://auth/verified?\${deepLinkParams.toString()}\`;
+                      return \`manito://auth/login?\${deepLinkParams.toString()}\`;
                   }
 
-                  // Fallback: just verification success signal
-                  return 'manito://auth/verified?verified=true&method=fallback';
+                  // FIXED: Fallback with email if available
+                  const fallbackParams = new URLSearchParams({
+                      verified: 'true',
+                      method: 'fallback'
+                  });
+
+                  if (userEmail) {
+                      fallbackParams.set('email', userEmail);
+                  }
+
+                  return \`manito://auth/login?\${fallbackParams.toString()}\`;
               }
 
               // Set up the app button
@@ -496,6 +605,7 @@ module.exports = async function handler(req, res) {
 
               console.log('✅ Email verification success page loaded');
               console.log('Tokens found:', getTokensFromUrl());
+              console.log('Extracted email:', extractUserEmail());
           </script>
       </body>
       </html>
@@ -526,7 +636,7 @@ module.exports = async function handler(req, res) {
               <div class="success">✓</div>
               <h1>¡Email Verificado!</h1>
               <p>Tu cuenta ha sido verificada exitosamente.</p>
-              <a href="manito://auth/verified">Abrir App Manito</a>
+              <a href="manito://auth/login">Abrir App Manito</a>
           </div>
       </body>
       </html>
