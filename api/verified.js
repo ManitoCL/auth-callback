@@ -4,8 +4,8 @@
  * Implements single-use verification links for banking-grade security
  */
 
-import { createClient } from '@supabase/supabase-js';
-import crypto from 'crypto';
+const { createClient } = require('@supabase/supabase-js');
+const crypto = require('crypto');
 
 // Initialize Supabase client for token tracking
 const supabase = createClient(
@@ -13,7 +13,7 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   try {
     // Set security headers
     res.setHeader('X-Frame-Options', 'DENY');
