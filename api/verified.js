@@ -113,21 +113,30 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    // FIXED: If still no email, try to get it from the verification context
-    if (!extractedEmail && (accessToken || refreshToken)) {
+    // FIXED: Get email from current session after Supabase verification
+    // Since Supabase consumes tokens before redirect, we get session instead
+    if (!extractedEmail) {
       try {
-        // Get user from Supabase using the tokens
-        const tempClient = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
-        if (accessToken && refreshToken) {
-          const { data: { user }, error } = await tempClient.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken
-          });
+        console.log('🔍 Attempting to get current session for email extraction...');
 
-          if (user && !error) {
-            extractedEmail = user.email;
-            console.log('🐛 Debug - Email extracted from user session:', extractedEmail);
-          }
+        // Create anonymous client to check current session
+        const anonClient = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
+
+        // Get current session (should exist after verification)
+        const { data: { session }, error: sessionError } = await anonClient.auth.getSession();
+
+        console.log('🐛 Debug - Session check:', {
+          hasSession: !!session,
+          hasUser: !!session?.user,
+          userEmail: session?.user?.email,
+          sessionError: sessionError?.message
+        });
+
+        if (session?.user?.email) {
+          extractedEmail = session.user.email;
+          console.log('✅ Email successfully extracted from post-verification session:', extractedEmail);
+        } else {
+          console.log('⚠️ No active session found after verification');
         }
       } catch (e) {
         console.log('⚠️ Could not extract email from session:', e.message);
@@ -505,22 +514,59 @@ module.exports = async function handler(req, res) {
                   return tokens;
               }
 
-              // FIXED: Extract user email from multiple sources
-              function extractUserEmail() {
-                  const tokens = getTokensFromUrl();
-
+              // FIXED: Extract user email from current session
+              async function extractUserEmail() {
                   // Server-side extracted email (passed via template)
                   const serverEmail = '${extractedEmail || ''}';
                   if (serverEmail) {
+                      console.log('✅ Using server-extracted email:', serverEmail);
                       return serverEmail;
                   }
 
-                  // Try to get from URL parameters
+                  // FIXED: Get email from current Supabase session (post-verification)
+                  try {
+                      console.log('🔍 Attempting to get email from current session...');
+
+                      // Import Supabase client (using CDN)
+                      const { createClient } = window.supabase || {};
+                      if (!createClient) {
+                          console.log('⚠️ Supabase client not available, loading from CDN...');
+                          // Load Supabase from CDN if not available
+                          const script = document.createElement('script');
+                          script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+                          document.head.appendChild(script);
+                          await new Promise(resolve => script.onload = resolve);
+                      }
+
+                      // Create client using environment variables from template
+                      const supabaseUrl = '${process.env.SUPABASE_URL}';
+                      const supabaseAnonKey = '${process.env.SUPABASE_ANON_KEY}';
+
+                      if (supabaseUrl && supabaseAnonKey) {
+                          const client = createClient(supabaseUrl, supabaseAnonKey);
+                          const { data: { session } } = await client.auth.getSession();
+
+                          console.log('🐛 Debug - Client session check:', {
+                              hasSession: !!session,
+                              hasUser: !!session?.user,
+                              userEmail: session?.user?.email
+                          });
+
+                          if (session?.user?.email) {
+                              console.log('✅ Email extracted from client session:', session.user.email);
+                              return session.user.email;
+                          }
+                      }
+                  } catch (e) {
+                      console.log('⚠️ Could not extract email from client session:', e.message);
+                  }
+
+                  // Fallback: Try to get from URL parameters (legacy)
+                  const tokens = getTokensFromUrl();
                   if (tokens.email) {
                       return tokens.email;
                   }
 
-                  // Try to decode from access token
                   if (tokens.access_token) {
                       try {
                           const payload = JSON.parse(atob(tokens.access_token.split('.')[1]));
@@ -530,13 +576,14 @@ module.exports = async function handler(req, res) {
                       }
                   }
 
+                  console.log('❌ Could not extract email from any source');
                   return null;
               }
 
               // FIXED: Generate deep link with email pre-population
-              function generateDeepLink() {
+              async function generateDeepLink() {
                   const tokens = getTokensFromUrl();
-                  const userEmail = extractUserEmail();
+                  const userEmail = await extractUserEmail();
 
                   console.log('🐛 Debug - Generating deep link with:', {
                       tokens,
@@ -576,19 +623,25 @@ module.exports = async function handler(req, res) {
               }
 
               // Set up the app button
-              document.getElementById('openAppBtn').addEventListener('click', (e) => {
+              document.getElementById('openAppBtn').addEventListener('click', async (e) => {
                   e.preventDefault();
 
-                  const deepLink = generateDeepLink();
-                  console.log('Opening deep link:', deepLink);
+                  try {
+                      const deepLink = await generateDeepLink();
+                      console.log('Opening deep link:', deepLink);
 
-                  // Try to open the app
-                  window.location.href = deepLink;
+                      // Try to open the app
+                      window.location.href = deepLink;
 
-                  // Fallback: Show instructions if app doesn't open
-                  setTimeout(() => {
-                      alert('¿No se abrió la app? Búscala en tu teléfono y abre Manito manualmente.');
-                  }, 2000);
+                      // Fallback: Show instructions if app doesn't open
+                      setTimeout(() => {
+                          alert('¿No se abrió la app? Búscala en tu teléfono y abre Manito manualmente.');
+                      }, 2000);
+                  } catch (error) {
+                      console.error('❌ Error generating deep link:', error);
+                      // Fallback deep link without email
+                      window.location.href = 'manito://auth/login?verified=true&method=error_fallback';
+                  }
               });
 
               // Auto-close after 30 seconds if no interaction
@@ -605,7 +658,13 @@ module.exports = async function handler(req, res) {
 
               console.log('✅ Email verification success page loaded');
               console.log('Tokens found:', getTokensFromUrl());
-              console.log('Extracted email:', extractUserEmail());
+
+              // Log extracted email asynchronously
+              extractUserEmail().then(email => {
+                  console.log('Extracted email:', email);
+              }).catch(error => {
+                  console.log('Error extracting email:', error);
+              });
           </script>
       </body>
       </html>
