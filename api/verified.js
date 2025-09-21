@@ -76,10 +76,10 @@ async function getEmailWithRetry(maxRetries = 6) {
     try {
       console.log(`🔄 Attempt ${attempt}/${maxRetries}: Querying recent verification events...`);
 
-      // Query recent verification events (last 15 minutes)
+      // Query recent verification events (last 15 minutes) - FIXED: Include 'id' field for deletion
       const { data: recentVerifications, error: verificationError } = await supabase
         .from('verification_events')
-        .select('user_email, verified_at, metadata, event_type')
+        .select('id, user_email, verified_at, metadata, event_type')
         .gt('expires_at', new Date().toISOString())
         .gte('verified_at', new Date(Date.now() - 15 * 60 * 1000).toISOString())
         .order('verified_at', { ascending: false })
@@ -105,6 +105,35 @@ async function getEmailWithRetry(maxRetries = 6) {
           event_type: recentVerification.event_type,
           attempt: attempt
         });
+
+        // SECURITY: Mark verification event as used (delete it to prevent reuse)
+        console.log(`🗑️ Attempting to delete verification event with ID: ${recentVerification.id}`);
+        try {
+          const { error: deleteError, count } = await supabase
+            .from('verification_events')
+            .delete()
+            .eq('id', recentVerification.id);
+
+          if (deleteError) {
+            console.error('❌ FAILED to invalidate verification event:', {
+              error: deleteError,
+              id: recentVerification.id,
+              email: recentVerification.user_email
+            });
+          } else {
+            console.log('✅ SUCCESS: Verification event deleted - link can no longer be reused', {
+              id: recentVerification.id,
+              email: recentVerification.user_email,
+              deleted_count: count
+            });
+          }
+        } catch (error) {
+          console.error('❌ EXCEPTION during verification event deletion:', {
+            error: error.message,
+            id: recentVerification.id,
+            email: recentVerification.user_email
+          });
+        }
 
         return recentVerification.user_email;
       }

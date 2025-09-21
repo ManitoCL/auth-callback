@@ -56,6 +56,51 @@ module.exports = async function handler(req, res) {
       if (!oldUser?.email_confirmed_at && user?.email_confirmed_at && user?.email) {
         console.log('✅ Email verification detected for user:', user.email);
 
+        // ENHANCED DEBUG: Deep metadata analysis for user type extraction
+        console.log('🐛 Debug: Full user object received by webhook:', JSON.stringify(user, null, 2));
+        console.log('🐛 Debug: User metadata specifically:', user.user_metadata);
+        console.log('🐛 Debug: Raw metadata specifically:', user.raw_user_meta_data);
+        console.log('🐛 Debug: App metadata specifically:', user.app_metadata);
+
+        // IMPROVED USER TYPE EXTRACTION: Try multiple metadata sources
+        let extractedUserType = 'customer'; // Default fallback
+
+        // Method 1: Check user_metadata (primary)
+        if (user.user_metadata?.user_type) {
+          extractedUserType = user.user_metadata.user_type;
+          console.log('✅ User type from user_metadata:', extractedUserType);
+        }
+        // Method 2: Check raw_user_meta_data (alternative)
+        else if (user.raw_user_meta_data?.user_type) {
+          extractedUserType = user.raw_user_meta_data.user_type;
+          console.log('✅ User type from raw_user_meta_data:', extractedUserType);
+        }
+        // Method 3: Check app_metadata (admin set)
+        else if (user.app_metadata?.user_type) {
+          extractedUserType = user.app_metadata.user_type;
+          console.log('✅ User type from app_metadata:', extractedUserType);
+        }
+        // Method 4: Query database for user_type (fallback)
+        else {
+          console.log('⚠️ No user_type in metadata, querying database...');
+          try {
+            const { data: dbUser, error } = await supabase
+              .from('users')
+              .select('user_type')
+              .eq('id', user.id)
+              .single();
+
+            if (!error && dbUser?.user_type) {
+              extractedUserType = dbUser.user_type;
+              console.log('✅ User type from database query:', extractedUserType);
+            }
+          } catch (queryError) {
+            console.log('⚠️ Database query failed, using default:', queryError.message);
+          }
+        }
+
+        console.log('🎯 Final extracted user_type:', extractedUserType);
+
         // Store verification event for device-agnostic retrieval
         const verificationEvent = {
           user_id: user.id,
@@ -63,9 +108,15 @@ module.exports = async function handler(req, res) {
           verified_at: user.email_confirmed_at,
           event_type: 'email_verified',
           metadata: {
-            user_type: user.user_metadata?.user_type || 'customer',
-            full_name: user.user_metadata?.full_name || user.email.split('@')[0],
-            verification_method: 'email_link'
+            user_type: extractedUserType,
+            full_name: user.user_metadata?.full_name || user.raw_user_meta_data?.full_name || user.email.split('@')[0],
+            verification_method: 'email_link',
+            metadata_sources_checked: {
+              user_metadata: !!user.user_metadata?.user_type,
+              raw_user_meta_data: !!user.raw_user_meta_data?.user_type,
+              app_metadata: !!user.app_metadata?.user_type,
+              database_query: extractedUserType !== 'customer' || (!user.user_metadata?.user_type && !user.raw_user_meta_data?.user_type && !user.app_metadata?.user_type)
+            }
           },
           expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString() // 15 minute expiry
         };
@@ -96,15 +147,60 @@ module.exports = async function handler(req, res) {
       if (user.email_confirmed_at && user.email) {
         console.log('✅ Auth webhook: Email verification for user:', user.email);
 
+        // IMPROVED USER TYPE EXTRACTION: Try multiple metadata sources (same as above)
+        let extractedUserType = 'customer'; // Default fallback
+
+        // Method 1: Check user_metadata (primary)
+        if (user.user_metadata?.user_type) {
+          extractedUserType = user.user_metadata.user_type;
+          console.log('✅ Auth webhook user type from user_metadata:', extractedUserType);
+        }
+        // Method 2: Check raw_user_meta_data (alternative)
+        else if (user.raw_user_meta_data?.user_type) {
+          extractedUserType = user.raw_user_meta_data.user_type;
+          console.log('✅ Auth webhook user type from raw_user_meta_data:', extractedUserType);
+        }
+        // Method 3: Check app_metadata (admin set)
+        else if (user.app_metadata?.user_type) {
+          extractedUserType = user.app_metadata.user_type;
+          console.log('✅ Auth webhook user type from app_metadata:', extractedUserType);
+        }
+        // Method 4: Query database for user_type (fallback)
+        else {
+          console.log('⚠️ Auth webhook: No user_type in metadata, querying database...');
+          try {
+            const { data: dbUser, error } = await supabase
+              .from('users')
+              .select('user_type')
+              .eq('id', user.id)
+              .single();
+
+            if (!error && dbUser?.user_type) {
+              extractedUserType = dbUser.user_type;
+              console.log('✅ Auth webhook user type from database query:', extractedUserType);
+            }
+          } catch (queryError) {
+            console.log('⚠️ Auth webhook database query failed, using default:', queryError.message);
+          }
+        }
+
+        console.log('🎯 Auth webhook final extracted user_type:', extractedUserType);
+
         const verificationEvent = {
           user_id: user.id,
           user_email: user.email,
           verified_at: user.email_confirmed_at,
           event_type: 'email_verified_auth_webhook',
           metadata: {
-            user_type: user.user_metadata?.user_type || 'customer',
-            full_name: user.user_metadata?.full_name || user.email.split('@')[0],
-            verification_method: 'auth_webhook'
+            user_type: extractedUserType,
+            full_name: user.user_metadata?.full_name || user.raw_user_meta_data?.full_name || user.email.split('@')[0],
+            verification_method: 'auth_webhook',
+            metadata_sources_checked: {
+              user_metadata: !!user.user_metadata?.user_type,
+              raw_user_meta_data: !!user.raw_user_meta_data?.user_type,
+              app_metadata: !!user.app_metadata?.user_type,
+              database_query: extractedUserType !== 'customer' || (!user.user_metadata?.user_type && !user.raw_user_meta_data?.user_type && !user.app_metadata?.user_type)
+            }
           },
           expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString()
         };
