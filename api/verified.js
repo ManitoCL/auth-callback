@@ -113,33 +113,45 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    // FIXED: Get email from current session after Supabase verification
-    // Since Supabase consumes tokens before redirect, we get session instead
+    // FIXED: Get email from recent verification events (device-agnostic)
+    // Query verification_events table populated by webhooks
     if (!extractedEmail) {
       try {
-        console.log('🔍 Attempting to get current session for email extraction...');
+        console.log('🔍 Attempting device-agnostic email extraction via verification events...');
 
-        // Create anonymous client to check current session
-        const anonClient = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
+        // Query recent verification events (last 15 minutes)
+        const { data: recentVerifications, error: verificationError } = await supabase
+          .from('verification_events')
+          .select('user_email, verified_at, metadata, minutes_ago:verified_at')
+          .gt('expires_at', new Date().toISOString())
+          .gte('verified_at', new Date(Date.now() - 15 * 60 * 1000).toISOString())
+          .order('verified_at', { ascending: false })
+          .limit(5);
 
-        // Get current session (should exist after verification)
-        const { data: { session }, error: sessionError } = await anonClient.auth.getSession();
-
-        console.log('🐛 Debug - Session check:', {
-          hasSession: !!session,
-          hasUser: !!session?.user,
-          userEmail: session?.user?.email,
-          sessionError: sessionError?.message
+        console.log('🐛 Debug - Recent verification events:', {
+          count: recentVerifications?.length || 0,
+          verificationError: verificationError?.message,
+          events: recentVerifications?.map(v => ({
+            email: v.user_email,
+            verified_at: v.verified_at,
+            metadata: v.metadata
+          }))
         });
 
-        if (session?.user?.email) {
-          extractedEmail = session.user.email;
-          console.log('✅ Email successfully extracted from post-verification session:', extractedEmail);
+        if (recentVerifications && recentVerifications.length > 0) {
+          // Use the most recent verification
+          const recentVerification = recentVerifications[0];
+          extractedEmail = recentVerification.user_email;
+          console.log('✅ Email extracted from recent verification event:', {
+            email: extractedEmail,
+            verified_at: recentVerification.verified_at,
+            metadata: recentVerification.metadata
+          });
         } else {
-          console.log('⚠️ No active session found after verification');
+          console.log('⚠️ No recent verification events found');
         }
       } catch (e) {
-        console.log('⚠️ Could not extract email from session:', e.message);
+        console.log('⚠️ Could not extract email from verification events:', e.message);
       }
     }
 
@@ -523,42 +535,39 @@ module.exports = async function handler(req, res) {
                       return serverEmail;
                   }
 
-                  // FIXED: Get email from current Supabase session (post-verification)
+                  // FIXED: Get email from recent verification events (device-agnostic)
                   try {
-                      console.log('🔍 Attempting to get email from current session...');
+                      console.log('🔍 Attempting device-agnostic email extraction...');
 
-                      // Import Supabase client (using CDN)
-                      const { createClient } = window.supabase || {};
-                      if (!createClient) {
-                          console.log('⚠️ Supabase client not available, loading from CDN...');
-                          // Load Supabase from CDN if not available
-                          const script = document.createElement('script');
-                          script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
-                          document.head.appendChild(script);
-                          await new Promise(resolve => script.onload = resolve);
-                      }
-
-                      // Create client using environment variables from template
-                      const supabaseUrl = '${process.env.SUPABASE_URL}';
-                      const supabaseAnonKey = '${process.env.SUPABASE_ANON_KEY}';
-
-                      if (supabaseUrl && supabaseAnonKey) {
-                          const client = createClient(supabaseUrl, supabaseAnonKey);
-                          const { data: { session } } = await client.auth.getSession();
-
-                          console.log('🐛 Debug - Client session check:', {
-                              hasSession: !!session,
-                              hasUser: !!session?.user,
-                              userEmail: session?.user?.email
-                          });
-
-                          if (session?.user?.email) {
-                              console.log('✅ Email extracted from client session:', session.user.email);
-                              return session.user.email;
+                      // Make API call to get recent verification events
+                      const response = await fetch('/api/get-recent-verification', {
+                          method: 'GET',
+                          headers: {
+                              'Content-Type': 'application/json'
                           }
+                      });
+
+                      if (response.ok) {
+                          const data = await response.json();
+                          console.log('🐛 Debug - Recent verification API response:', data);
+
+                          if (data.email) {
+                              console.log('✅ Email extracted from recent verification:', {
+                                  email: data.email,
+                                  minutes_ago: data.minutes_ago,
+                                  event_type: data.event_type
+                              });
+                              return data.email;
+                          }
+                      } else {
+                          const errorData = await response.json().catch(() => ({}));
+                          console.log('⚠️ Recent verification API failed:', {
+                              status: response.status,
+                              error: errorData.message || 'Unknown error'
+                          });
                       }
                   } catch (e) {
-                      console.log('⚠️ Could not extract email from client session:', e.message);
+                      console.log('⚠️ Could not extract email from verification events:', e.message);
                   }
 
                   // Fallback: Try to get from URL parameters (legacy)
