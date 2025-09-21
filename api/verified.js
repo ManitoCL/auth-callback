@@ -27,6 +27,11 @@ module.exports = async function handler(req, res) {
       "connect-src 'self';"
     );
 
+    // CACHE-BUSTING: Prevent browser caching of verification pages
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+
     console.log('🔒 Enterprise: Device-agnostic email verification handler');
 
     // ENHANCED DEBUG: Log request details (without tokens - they're consumed by Supabase)
@@ -40,8 +45,23 @@ module.exports = async function handler(req, res) {
     // DEVICE-AGNOSTIC EMAIL EXTRACTION with retry logic
     const extractedEmail = await getEmailWithRetry();
 
+    console.log('🐛 Debug - Post-extraction check:', {
+      extractedEmail: extractedEmail,
+      isNull: extractedEmail === null,
+      isUndefined: extractedEmail === undefined,
+      isFalsy: !extractedEmail,
+      typeof: typeof extractedEmail
+    });
+
     if (!extractedEmail) {
-      console.log('⚠️ No email found after retries - using fallback approach');
+      console.log('⚠️ No email found after retries - verification link expired or already used');
+      console.log('🔄 Serving expired verification link error page');
+
+      // IMPROVED UX: Show proper error page for expired/used links
+      const errorHtml = generateExpiredLinkPage();
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.status(410).send(errorHtml); // 410 Gone - appropriate for expired links
+      return;
     }
 
     console.log('📧 Final email result:', {
@@ -341,6 +361,107 @@ function generateSuccessPage(extractedEmail) {
             setTimeout(() => { if (!hasInteracted) window.close(); }, 30000);
 
             console.log('✅ IMPROVED verification success page loaded with retry logic');
+        </script>
+    </body>
+    </html>
+  `;
+}
+
+/**
+ * Generate error page for expired/used verification links
+ */
+function generateExpiredLinkPage() {
+  return `
+    <!DOCTYPE html>
+    <html lang="es">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Enlace Expirado - Manito</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body {
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+                min-height: 100vh; display: flex; align-items: center; justify-content: center;
+                padding: 20px; color: #333;
+            }
+            .container {
+                background: white; border-radius: 24px; padding: 48px 32px; max-width: 480px; width: 100%;
+                text-align: center; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1); position: relative; overflow: hidden;
+            }
+            .container::before {
+                content: ''; position: absolute; top: 0; left: 0; right: 0; height: 6px;
+                background: linear-gradient(90deg, #ef4444, #dc2626, #b91c1c);
+            }
+            .error-icon {
+                width: 80px; height: 80px; background: #ef4444; border-radius: 50%;
+                display: flex; align-items: center; justify-content: center; margin: 0 auto 24px;
+                position: relative; animation: pulse 2s infinite;
+            }
+            .error-icon::after { content: '⚠'; color: white; font-size: 36px; font-weight: 700; }
+            @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+            .title { font-size: 28px; font-weight: 700; color: #1f2937; margin-bottom: 12px; line-height: 1.3; }
+            .subtitle { font-size: 18px; color: #6b7280; margin-bottom: 32px; line-height: 1.5; }
+            .instructions {
+                background: #fef2f2; border: 2px solid #fecaca; border-radius: 16px; padding: 24px; margin-bottom: 32px;
+            }
+            .instructions h3 {
+                font-size: 16px; font-weight: 600; color: #374151; margin-bottom: 12px;
+                display: flex; align-items: center; justify-content: center; gap: 8px;
+            }
+            .instructions p { font-size: 15px; color: #6b7280; line-height: 1.6; margin-bottom: 12px; }
+            .action-buttons { display: flex; flex-direction: column; gap: 16px; margin-bottom: 24px; }
+            .btn {
+                padding: 16px 24px; border-radius: 12px; font-size: 16px; font-weight: 600;
+                text-decoration: none; border: none; cursor: pointer; transition: all 0.2s ease;
+                display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+            }
+            .btn-primary { background: #059669; color: white; }
+            .btn-primary:hover { background: #047857; transform: translateY(-1px); }
+            .btn-secondary { background: white; color: #374151; border: 2px solid #e5e7eb; }
+            .btn-secondary:hover { background: #f9fafb; border-color: #d1d5db; }
+            .footer {
+                font-size: 13px; color: #9ca3af; line-height: 1.5; margin-top: 24px;
+            }
+            .footer a { color: #059669; text-decoration: none; }
+            .footer a:hover { text-decoration: underline; }
+            @media (max-width: 480px) {
+                .container { padding: 32px 24px; margin: 16px; }
+                .title { font-size: 24px; } .subtitle { font-size: 16px; }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="error-icon"></div>
+            <h1 class="title">Enlace Expirado</h1>
+            <p class="subtitle">Este enlace de verificación ya no es válido</p>
+            <div class="instructions">
+                <h3>🔄 ¿Qué hacer ahora?</h3>
+                <p>El enlace de verificación ha expirado o ya fue utilizado por seguridad.</p>
+                <p>Si necesitas verificar tu cuenta, inicia sesión en la app y solicita un nuevo enlace de verificación.</p>
+            </div>
+            <div class="action-buttons">
+                <a href="manito://auth/login" class="btn btn-primary">📱 Abrir App Manito</a>
+                <button onclick="window.close()" class="btn btn-secondary">✕ Cerrar esta ventana</button>
+            </div>
+            <div class="footer">
+                ¿Problemas? Contacta nuestro soporte en <a href="mailto:soporte@manito.cl">soporte@manito.cl</a><br>
+                <strong>Manito</strong> - Servicios para el hogar confiables en Chile
+            </div>
+        </div>
+
+        <script>
+            // Auto-close after 30 seconds if no interaction
+            let hasInteracted = false;
+            document.addEventListener('click', () => { hasInteracted = true; });
+            setTimeout(() => { if (!hasInteracted) window.close(); }, 30000);
+
+            console.log('⚠️ Verification link expired/used - showing error page');
         </script>
     </body>
     </html>

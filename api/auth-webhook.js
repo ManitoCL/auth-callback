@@ -16,6 +16,93 @@ const supabase = createClient(
 // Webhook secret for security
 const WEBHOOK_SECRET = process.env.SUPABASE_WEBHOOK_SECRET || 'your-webhook-secret-here';
 
+/**
+ * Create user profile AFTER email verification (security fix)
+ * This ensures only verified users get profiles in the system
+ */
+async function createProfileAfterVerification(user, userType) {
+  console.log('🔒 Creating profile after verification for user:', user.id);
+
+  // Check if profile already exists
+  const { data: existingProfile, error: checkError } = await supabase
+    .from('users')
+    .select('id')
+    .eq('id', user.id)
+    .single();
+
+  if (existingProfile) {
+    console.log('✅ Profile already exists for verified user:', user.id);
+    return;
+  }
+
+  if (checkError && checkError.code !== 'PGRST116') {
+    console.error('❌ Error checking existing profile:', checkError);
+    throw checkError;
+  }
+
+  // Create user profile from auth metadata
+  const profileData = {
+    id: user.id,
+    email: user.email,
+    full_name: user.user_metadata?.full_name || user.raw_user_meta_data?.full_name,
+    user_type: userType,
+    phone_number: user.user_metadata?.phone_number || user.raw_user_meta_data?.phone_number || null,
+    display_name: user.user_metadata?.display_name || user.raw_user_meta_data?.display_name,
+    is_verified: true, // Email just verified
+    email_verified_at: user.email_confirmed_at,
+    onboarding_completed: false,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    last_seen_at: new Date().toISOString(),
+    // Chilean fields
+    nombres: user.user_metadata?.nombres || user.raw_user_meta_data?.nombres || null,
+    apellidos: user.user_metadata?.apellidos || user.raw_user_meta_data?.apellidos || null,
+  };
+
+  console.log('📝 Creating verified user profile:', {
+    userId: user.id,
+    email: user.email,
+    userType: userType,
+    hasFullName: !!profileData.full_name
+  });
+
+  const { error: profileError } = await supabase
+    .from('users')
+    .insert(profileData);
+
+  if (profileError) {
+    console.error('❌ Failed to create user profile after verification:', profileError);
+    throw profileError;
+  }
+
+  console.log('✅ User profile created successfully after verification');
+
+  // Create provider profile if needed
+  if (userType === 'provider') {
+    console.log('👨‍💼 Creating provider profile for verified user:', user.id);
+
+    const providerData = {
+      user_id: user.id,
+      business_name: null, // Will be set during onboarding
+      description: 'Proveedor de servicios profesionales en Chile',
+      verification_status: 'pending',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const { error: providerError } = await supabase
+      .from('provider_profiles')
+      .insert(providerData);
+
+    if (providerError) {
+      console.error('❌ Failed to create provider profile after verification:', providerError);
+      // Don't throw - user profile was created successfully
+    } else {
+      console.log('✅ Provider profile created successfully after verification');
+    }
+  }
+}
+
 module.exports = async function handler(req, res) {
   // Only allow POST requests
   if (req.method !== 'POST') {
@@ -101,6 +188,14 @@ module.exports = async function handler(req, res) {
 
         console.log('🎯 Final extracted user_type:', extractedUserType);
 
+        // SECURITY FIX: Create user profile AFTER email verification
+        try {
+          await createProfileAfterVerification(user, extractedUserType);
+        } catch (profileCreationError) {
+          console.error('❌ Profile creation after verification failed:', profileCreationError);
+          // Continue with verification event storage - don't fail webhook
+        }
+
         // Store verification event for device-agnostic retrieval
         const verificationEvent = {
           user_id: user.id,
@@ -185,6 +280,14 @@ module.exports = async function handler(req, res) {
         }
 
         console.log('🎯 Auth webhook final extracted user_type:', extractedUserType);
+
+        // SECURITY FIX: Create user profile AFTER email verification
+        try {
+          await createProfileAfterVerification(user, extractedUserType);
+        } catch (profileCreationError) {
+          console.error('❌ Auth webhook profile creation failed:', profileCreationError);
+          // Continue with verification event storage - don't fail webhook
+        }
 
         const verificationEvent = {
           user_id: user.id,
