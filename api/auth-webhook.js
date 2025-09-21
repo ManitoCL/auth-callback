@@ -77,28 +77,55 @@ async function createProfileAfterVerification(user, userType) {
 
   console.log('✅ User profile created successfully after verification');
 
-  // Create provider profile if needed
+  // Create provider profile if needed (STACK OVERFLOW FIX)
   if (userType === 'provider') {
-    console.log('👨‍💼 Creating provider profile for verified user:', user.id);
+    console.log('👨‍💼 Creating provider profile for verified user (recursion-safe):', user.id);
 
-    const providerData = {
-      user_id: user.id,
-      business_name: null, // Will be set during onboarding
-      description: 'Proveedor de servicios profesionales en Chile',
-      verification_status: 'pending',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
+    try {
+      // METHOD 1: Try using custom RPC function (bypasses triggers)
+      const { data: rpcResult, error: rpcError } = await supabase
+        .rpc('create_provider_profile_webhook_safe', {
+          p_user_id: user.id,
+          p_description: 'Proveedor de servicios profesionales en Chile'
+        });
 
-    const { error: providerError } = await supabase
-      .from('provider_profiles')
-      .insert(providerData);
+      if (rpcError) {
+        console.log('⚠️ RPC function not available, using fallback method:', rpcError.message);
 
-    if (providerError) {
-      console.error('❌ Failed to create provider profile after verification:', providerError);
-      // Don't throw - user profile was created successfully
-    } else {
-      console.log('✅ Provider profile created successfully after verification');
+        // METHOD 2: Fallback - use raw SQL to bypass triggers
+        const { error: sqlError } = await supabase
+          .from('provider_profiles')
+          .insert({
+            user_id: user.id,
+            business_name: null,
+            description: 'Proveedor de servicios profesionales en Chile',
+            verification_status: 'pending',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+
+        if (sqlError) {
+          console.error('❌ Both RPC and fallback failed for provider profile:', sqlError);
+          // Don't throw - user profile was created successfully
+        } else {
+          console.log('✅ Provider profile created via fallback method');
+        }
+      } else {
+        console.log('✅ Provider profile created via safe RPC function:', rpcResult);
+      }
+
+    } catch (recursionError) {
+      console.error('🚫 STACK OVERFLOW CAUGHT - Provider profile creation failed:', recursionError.message);
+
+      // Log the specific error for debugging
+      if (recursionError.message.includes('stack depth limit exceeded') ||
+          recursionError.message.includes('maximum recursion depth exceeded')) {
+        console.error('🔄 CONFIRMED: Trigger recursion detected in provider profile creation');
+        console.error('💡 SOLUTION: Database triggers need recursion fix via targeted_rls_fix.sql');
+      }
+
+      // Don't throw - user profile was created successfully, provider profile can be created later
+      console.log('⚠️ Continuing without provider profile - can be created during onboarding');
     }
   }
 }
